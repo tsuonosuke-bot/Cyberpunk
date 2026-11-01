@@ -300,14 +300,14 @@ function best(list, sk) {
 }
 const hhmm = (m) => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
-function L(ctx, who, text, kind = '', calc = '', lane = 'field') {
+function L(ctx, who, text, kind = '', calc = '', lane = ctx.lane) {
   if (ctx.sim) return;
   ctx.clock += rint(1, 4);
-  ctx.log.push({ night: ctx.night, t: hhmm(ctx.clock), who, text, kind, calc, lane });
+  ctx.log.push({ night: ctx.night, ph: ctx.ph, t: hhmm(ctx.clock), who, text, kind, calc, lane });
 }
 function sub(ctx, text, kind = '') {
   if (ctx.sim) return;
-  ctx.log.push({ night: ctx.night, t: '', who: '', text, kind, calc: '', sub: true });
+  ctx.log.push({ night: ctx.night, ph: ctx.ph, lane: ctx.lane, t: '', who: '', text, kind, calc: '', sub: true });
 }
 function addHeat(ctx, corp, v) {
   if (!corp || !CLIENTS[corp] || CLIENTS[corp].kind !== 'corp') return;
@@ -538,7 +538,7 @@ function resolveMission(job, routeIdx, team, sim) {
   const ctx = {
     job, rank: job.rank, team, all, sim, log: [], heat: {}, lazarus: [],
     mods: { extraEnemy: 0, gateUp: 0, chase: false },
-    rewardMult: 1, aborted: false, reason: '', goals: 0, need: 0, night: 1, clock: 22 * 60,
+    rewardMult: 1, aborted: false, reason: '', goals: 0, need: 0, night: 1, clock: 22 * 60, ph: 0, lane: 'field',
   };
   const len = route.field.length;
   for (let i = 0; i < len; i++) {
@@ -551,7 +551,10 @@ function resolveMission(job, routeIdx, team, sim) {
     ctx.clock = 22 * 60 + (i % 5) * 78 + rint(2, 20);
     let n = route.net[i], f = route.field[i];
     if (blind) { if (n && n.hidden) n = null; if (f && f.hidden) f = null; }
+    ctx.ph = i;
+    ctx.lane = 'net';
     if (n) netPhase(ctx, n);
+    ctx.lane = 'field';
     if (!ctx.aborted && f) fieldPhase(ctx, f);
     if (!ctx.aborted && team.field.length && team.field.every((m) => !alive(m))) abort(ctx, '現場の全員が動けない。撤退');
     if (ctx.aborted) break;
@@ -605,13 +608,13 @@ function campaignDone(n, out) {
 
 function settle(ms, out) {
   const job = ms.job, res = ms.result;
-  const s = { title: job.title, route: job.routes[ms.routeIdx].name, success: res.success, reason: res.reason, lines: [], net: 0, deaths: [], notes: [], cred: 0 };
+  const s = { title: job.title, route: job.routes[ms.routeIdx].name, success: res.success, reason: res.reason, lines: [], net: 0, deaths: [], deadRunners: [], notes: [], cred: 0 };
   const members = res.members;
   const n = members.length || 1;
   for (const m of members) {
     const r = getR(m.id);
     if (!r) continue;
-    if (m.dead) { killRunner(r, job.title); s.deaths.push(r.name); continue; }
+    if (m.dead) { s.deadRunners.push(clone(r)); killRunner(r, job.title); s.deaths.push(r.name); continue; }
     r.hp = m.hp; r.armor = m.armor; r.status = 'idle'; r.jobs++; r.kills += m.kills;
     if (m.down && !m.rescued) s.notes.push(`${r.name}は重体で戻った（HP 0）`);
     if (m.rescued) s.notes.push(`${r.name}はラザロに回収された（HP 1）`);
@@ -678,6 +681,7 @@ function upkeepItems() {
 }
 
 function desert(r, out) {
+  out.deserted.push(clone(r));
   leaveRunner(r);
   const boss = {
     name: r.name, hits: 3,
@@ -715,7 +719,7 @@ function raid(corp, out) {
     }
     if (res.lazarus.length) G.money -= 600 * res.lazarus.length;
   }
-  out.comms.push({ title: job.title, route: '隠れ家の防衛', k: 1, of: 1, lines: log, ends: true, success: ok, raid: true });
+  out.comms.push({ title: job.title, route: '隠れ家の防衛', k: 1, of: 1, lines: log, ends: true, success: ok, raid: true, corp });
   if (ok) { G.heat[corp] = 60; out.events.push({ kind: 'ok', text: `${CLIENTS[corp].short}の襲撃を退けた。ヒートは60まで下がった` }); }
   else {
     const loss = Math.max(1000, Math.round(Math.max(0, G.money) * 0.3));
@@ -725,7 +729,7 @@ function raid(corp, out) {
 }
 
 function endNight() {
-  const out = { night: G.night, comms: [], settle: [], upkeep: [], upkeepTotal: 0, events: [], story: [], touched: {}, heat: [] };
+  const out = { night: G.night, comms: [], settle: [], upkeep: [], upkeepTotal: 0, events: [], story: [], touched: {}, heat: [], deserted: [] };
   const heatBefore = { ...G.heat };
   const tonight = new Set(G.missions.flatMap((m) => teamIds(m.team)));
 
@@ -742,8 +746,10 @@ function endNight() {
     }
     const k = G.night - ms.start + 1;
     const ends = k >= ms.result.endNight;
+    const rt = ms.job.routes[ms.routeIdx];
     out.comms.push({
-      title: ms.job.title, route: ms.job.routes[ms.routeIdx].name, k, of: ms.job.nights,
+      title: ms.job.title, route: rt.name, k, of: ms.job.nights,
+      phases: { field: rt.field, net: rt.net }, intel: ms.job.intel, client: ms.job.client,
       lines: ms.result.log.filter((l) => l.night === k), ends, success: ends ? ms.result.success : null,
     });
     if (ends) { out.settle.push(settle(ms, out)); done.push(ms); }

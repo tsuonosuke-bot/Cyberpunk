@@ -86,6 +86,7 @@ function runnerCard(r, mode, idx) {
   }
   return `<article class="runner ${mode} ${r.status === 'mission' ? 'away' : ''}">
     <header>
+      ${portraitImg(r, 'lg')}
       <div class="nmrow"><b class="nm">${esc(r.name)}</b>${r.story ? '<span class="chip p">物語つき</span>' : ''}${r.lazarus ? '<span class="chip b">ラザロ</span>' : ''}</div>
       <span class="role">${R.tag}<small>${R.name}</small></span>
     </header>
@@ -114,7 +115,7 @@ function hud() {
       <div class="${G.money < 0 ? 'neg' : ''}"><dt class="label">所持金</dt><dd class="num">${cr(G.money)}${G.negStreak ? ` <span class="chip p">赤字 ${G.negStreak}/3</span>` : ''}</dd></div>
       <div><dt class="label">評判</dt><dd>R${G.rank} ${RANK_NAME[G.rank]} <span class="num dim">${G.cred}${next ? `/${next}` : ''}</span></dd></div>
     </dl>
-    <div class="heat" aria-label="企業ごとのヒート">${CORPS.map((c) => `<div class="hb ${G.heat[c] >= 80 ? 'hot' : ''}"><span>${CLIENTS[c].short}</span><div class="ht"><i style="width:${G.heat[c]}%"></i></div><b class="num">${G.heat[c]}</b></div>`).join('')}</div>
+    <div class="heat" aria-label="企業ごとのヒート">${CORPS.map((c) => `<div class="hb ${G.heat[c] >= 80 ? 'hot' : ''}"><span>${logo(c)}${CLIENTS[c].short}</span><div class="ht"><i style="width:${G.heat[c]}%"></i></div><b class="num">${G.heat[c]}</b></div>`).join('')}</div>
   </div>
   <nav class="tabs" role="tablist">${tabs.map(([k, l]) => `<button role="tab" aria-selected="${UI.tab === k}" data-act="tab" data-v="${k}">${l}${badge[k] ? `<span class="bd num">${badge[k]}</span>` : ''}</button>`).join('')}</nav>
   </header>`;
@@ -272,7 +273,7 @@ function formation(job, team) {
       : `<small class="dim">${statusText(r)}</small>`;
     const hurt = r.hp < maxHp(r) / 2 ? ' <span class="pink">重傷 −2</span>' : '';
     return `<div class="pick ${ln ? 'in' : ''} ${can ? '' : 'off'}">
-      <div class="pn"><b>${esc(r.name)}</b><span class="role sm">${ROLES[r.role].tag}</span><span class="num dim">HP ${r.hp}/${maxHp(r)}${hurt}</span><span class="dim">${r.contract === 'exclusive' ? '専属' : '歩合'}</span></div>
+      <div class="pn">${portraitImg(r, 'sm')}<b>${esc(r.name)}</b><span class="role sm">${ROLES[r.role].tag}</span><span class="num dim">HP ${r.hp}/${maxHp(r)}${hurt}</span><span class="dim">${r.contract === 'exclusive' ? '専属' : '歩合'}</span></div>
       ${seg}</div>`;
   }).join('');
   return `<div class="slots">${lane('field')}${lane('support')}${lane('net')}</div>
@@ -320,7 +321,7 @@ function jobCard(j) {
   return `<button class="job ${UI.job === j.uid ? 'sel' : ''}" data-act="job" data-v="${j.uid}">
     <div class="jtop"><span class="rk">R${j.rank}</span>${tags}<span class="exp dim">${j.special ? '' : `あと${j.expires - G.night + 1}夜`}</span></div>
     <b class="jt">${esc(j.title)}</b>
-    <div class="jm">${CLIENTS[j.client].short}${j.target ? ` → ${CLIENTS[j.target].short}` : ''} ・ ${j.nights}夜 ・ <span class="num">${fmt(j.payout)}cr</span>${j.repeat >= 2 && !j.special ? ' <span class="pink">値下がり</span>' : ''}</div>
+    <div class="jm">${logo(j.client)}${CLIENTS[j.client].short}${j.target ? ` → ${logo(j.target)}${CLIENTS[j.target].short}` : ''} ・ ${j.nights}夜 ・ <span class="num">${fmt(j.payout)}cr</span>${j.repeat >= 2 && !j.special ? ' <span class="pink">値下がり</span>' : ''}</div>
     ${j.req.length ? `<div class="req">${j.req.map((r) => `<span>${ROLES[r].name}</span>`).join('')}</div>` : ''}
   </button>`;
 }
@@ -331,7 +332,7 @@ function jobDetail(job) {
   const errs = validateTeam(job, team);
   const cost = intelCost(job);
   return `<article class="jd" id="jd">
-    <div class="label">${CLIENTS[job.client].name}${job.target ? ` → 標的 ${CLIENTS[job.target].name}` : ''}</div>
+    <div class="label jdlabel">${logo(job.client)}${CLIENTS[job.client].name}${job.target ? ` → 標的 ${logo(job.target)}${CLIENTS[job.target].name}` : ''}</div>
     <h2>${esc(job.title)}</h2>
     <p>${esc(job.desc)}</p>
     <dl class="facts">
@@ -389,6 +390,7 @@ function viewDoc() {
     else btns = `<button data-act="cyber" data-r="${r.id}" data-c="${c}" data-v="wallet" ${price > r.wallet ? 'disabled' : ''}>本人の手持ちで払う</button>`;
     return `<div class="cw ${rec ? 'rec' : ''} ${owned ? 'owned' : ''}">
       <div class="cwh"><b>${cw.name}</b><span class="label">${cw.part}</span>${rec ? '<span class="chip b">相性</span>' : ''}</div>
+      <div class="cwp">${owned ? '' : `${portraitImg(r, 'md')}<span class="dim">→</span>${portraitImg(r, 'md', { cyber: [...r.cyber, c], humanity: after })}<small class="dim">入れた後</small>`}</div>
       <p>${cw.desc}</p>
       <dl class="cwn">
         <div><dt>ローン</dt><dd class="num">${per}cr/夜 ×${cw.loan[1]}</dd></div>
@@ -425,9 +427,10 @@ function viewDoc() {
 
 function logLines(lines, animate) {
   return lines.map((l) => {
-    if (l.sub) return `<div class="ln sub ${l.kind}${animate ? '' : ' on'}"><span class="what">${esc(l.text)}</span></div>`;
+    const at = ` data-ph="${l.ph ?? ''}" data-lane="${l.lane || ''}"`;
+    if (l.sub) return `<div class="ln sub ${l.kind}${animate ? '' : ' on'}"${at}><span class="what">${esc(l.text)}</span></div>`;
     const res = l.calc ? `<span class="res">${l.kind === 'ok' ? '成功' : '失敗'}</span>` : '';
-    return `<div class="ln ${l.kind} ${l.lane === 'net' ? 'net' : ''}${animate ? '' : ' on'}">
+    return `<div class="ln ${l.kind} ${l.lane === 'net' ? 'net' : ''}${animate ? '' : ' on'}"${at}>
       <span class="t">${l.t ? `[${l.t}]` : ''}</span>${l.lane === 'net' ? '<span class="lanetag">NET</span>' : ''}<span class="who">${esc(l.who || '')}</span><span class="what">${esc(l.text)}</span>${l.calc ? `<span class="calc">${esc(l.calc)}</span>` : ''}${res}</div>`;
   }).join('');
 }
@@ -459,7 +462,8 @@ function stepComm(c) {
     : '<p class="verdict dim">夜明け。続きは次の夜に届く</p>';
   return `<div class="label">通信 ・ COMM LOG</div>
     <h2>${esc(c.title)}</h2>
-    <p class="dim">${head} ${esc(c.route)}</p>
+    <p class="dim">${c.raid ? logo(c.corp) : logo(c.client)} ${head} ${esc(c.route)}</p>
+    ${commStrip(c)}
     <div class="log play">${logLines(c.lines, !reduced) || '<div class="ln on">（通信なし）</div>'}</div>
     <div class="tail" ${reduced ? '' : 'hidden'}>${tail}</div>
     <div class="mact"><button data-act="skiplog">すべて表示</button><button class="primary" data-act="next">次へ</button></div>`;
@@ -540,14 +544,80 @@ function renderModal() {
   modal.scrollTop = 0;
   const box = modal.querySelector('.log.play');
   if (box && !reduced) playLog(box);
+  if (box && reduced) finishStrip();
+  stepCutin(key);
+}
+
+function stepCutin(key) {
+  if (key === 'intro') return cutin({ kicker: 'ヨミハマ ・ 第1章', title: '引き継ぎ', tone: 'blue' });
+  if (key === 'ending') return cutin({ kicker: '第5章', title: '夜明け', tone: 'blue' });
+  if (!UI.flow) return;
+  const s = UI.flow.steps[UI.flow.step];
+  const out = UI.flow.out;
+  if (s.k === 'story') {
+    const [kick, title] = STORY[s.n].title.split('　');
+    return cutin({ kicker: `MAIN ・ ${kick}`, title, tone: 'pink' });
+  }
+  if (s.k === 'comm' && out.comms[s.i].raid) return cutin({ kicker: '警報', title: '襲撃', sub: esc(out.comms[s.i].title), tone: 'red' });
+  if (s.k === 'settle') {
+    const dead = out.settle[s.i].deadRunners || [];
+    if (dead.length) return cutin({ kicker: '通信途絶', title: '応答なし', sub: dead.map((r) => esc(r.name)).join('、'), tone: 'red', por: portrait(dead[0], { glitch: 2 }) });
+  }
+  if (s.k === 'report' && out.deserted && out.deserted.length) {
+    const d = out.deserted[0];
+    return cutin({ kicker: '人間性 0', title: '脱走', sub: esc(d.name), tone: 'pink', por: portrait(d, { glitch: 2 }) });
+  }
+}
+
+function commStrip(c) {
+  if (!c.phases) return '';
+  const len = c.phases.field.length;
+  const start = (c.k - 1) * 5;
+  const cell = (p, i, lane) => {
+    const past = i < start ? ' past done' : '';
+    if (!p) return `<div class="ph empty${past}" data-ph="${i}" data-lane="${lane}"><i>${i + 1}</i>—</div>`;
+    const cls = { combat: 'enemy', boss: 'enemy', goal: 'goal', ice: 'ice', trap: 'trap' }[p.t] || '';
+    const fog = p.hidden && !c.intel && !past ? ' fog' : '';
+    return `<div class="ph ${cls}${p.fx === 'data' ? ' netgoal' : ''}${past}${fog}" data-ph="${i}" data-lane="${lane}"><i>${i + 1}</i><span class="real">${esc(p.l)}<span class="dv">${PH_DV[p.t](p)}</span></span><span class="q">???</span></div>`;
+  };
+  const hasNet = c.phases.net.some(Boolean);
+  return `<div class="strip-wrap"><div class="strip cstrip" style="--cols:${len}">
+    <div class="lane">現場</div>${c.phases.field.map((p, i) => cell(p, i, 'field')).join('')}
+    ${hasNet ? `<div class="lane">ネット</div>${c.phases.net.map((p, i) => cell(p, i, 'net')).join('')}` : ''}
+  </div></div>`;
+}
+
+/* 通信の1行を、フェーズ表のマスに反映する */
+function markStrip(ln, final) {
+  const strip = modal.querySelector('.cstrip');
+  if (!strip) return;
+  strip.querySelectorAll('.cur').forEach((e) => e.classList.remove('cur'));
+  if (!ln || ln.dataset.ph === undefined || ln.dataset.ph === '') return;
+  const ph = +ln.dataset.ph, lane = ln.dataset.lane || 'field';
+  strip.querySelectorAll('.ph').forEach((e) => { if (+e.dataset.ph < ph) e.classList.add('done'); });
+  const cell = strip.querySelector(`.ph[data-ph="${ph}"][data-lane="${lane}"]`);
+  if (!cell) return;
+  cell.classList.remove('fog');
+  if (!final) cell.classList.add('cur');
+  const k = ln.classList;
+  if (k.contains('sub')) { if (k.contains('ng')) cell.classList.add('hurt'); return; }
+  if (k.contains('ok') || k.contains('goal')) { cell.classList.remove('bad'); cell.classList.add('good'); if (lane === 'net') cell.classList.add('broken'); }
+  else if (k.contains('ng') || k.contains('dead')) { cell.classList.remove('good'); cell.classList.add('bad'); }
+  else if (k.contains('warn')) cell.classList.add('hurt');
+}
+function finishStrip() {
+  modal.querySelectorAll('.log.play .ln').forEach((l) => markStrip(l, true));
+  markStrip(null);
 }
 
 function playLog(box) {
   const lines = [...box.querySelectorAll('.ln')];
   let i = 0;
   UI.timer = setInterval(() => {
-    if (i >= lines.length) { clearInterval(UI.timer); showTail(); return; }
-    lines[i++].classList.add('on');
+    if (i >= lines.length) { clearInterval(UI.timer); markStrip(null); showTail(); return; }
+    const ln = lines[i++];
+    ln.classList.add('on');
+    markStrip(ln);
     box.scrollTop = box.scrollHeight;
   }, 170);
 }
@@ -559,6 +629,7 @@ function showTail() {
 /* ───────── タイトル・結末 ───────── */
 
 function renderTitle() {
+  City.setMode('full');
   const sv = loadSave();
   app.innerHTML = `<div class="title-screen"><div class="ts-in">
     <div class="label">GUILD SIM ・ CYBERPUNK REWORK</div>
@@ -605,6 +676,8 @@ function renderEnding() {
   modal.hidden = true;
   UI.modalKey = '';
   document.body.classList.remove('locked');
+  City.setMode('full');
+  cutin({ kicker: 'ENDING', title: e.title, tone: t === 'bankrupt' ? 'red' : 'blue' });
 }
 
 /* ───────── 描画と操作 ───────── */
@@ -612,6 +685,7 @@ function renderEnding() {
 function render() {
   if (!G) return renderTitle();
   if (G.ended && !UI.flow) return renderEnding();
+  City.setMode(UI.tab === 'home' ? 'full' : 'dim');
   const views = { home: viewHome, scout: viewScout, board: viewBoard, doc: viewDoc, log: viewLog };
   app.innerHTML = hud() + `<main class="view view-${UI.tab}">${views[UI.tab]()}</main>` + dock();
   renderModal();
@@ -687,6 +761,7 @@ const H_ = {
   skiplog() {
     clearInterval(UI.timer);
     modal.querySelectorAll('.log.play .ln').forEach((l) => l.classList.add('on'));
+    finishStrip();
     const box = modal.querySelector('.log.play');
     if (box) box.scrollTop = box.scrollHeight;
     showTail();
@@ -714,6 +789,7 @@ document.addEventListener('click', (e) => {
 });
 
 function boot(data) {
+  City.init();
   if (data && data.G) {
     G = data.G;
     Object.assign(UI, data.UI || {});
