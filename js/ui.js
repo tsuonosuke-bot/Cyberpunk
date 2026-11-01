@@ -180,7 +180,7 @@ function viewHome() {
     </section>
     <section class="panel"><h3>ヒート</h3>
       <div class="heatlist">${CORPS.map((c) => `<div class="hrow ${G.heat[c] >= 80 ? 'hot' : ''}"><span>${CLIENTS[c].name}</span><div class="ht"><i style="width:${G.heat[c]}%"></i></div><b class="num">${G.heat[c]}</b></div>`).join('')}</div>
-      <p class="dim">100に達すると隠れ家が襲撃され、待機中のランナーで防衛します。${G.chapter >= 4 ? '<span class="pink">第4章から毎夜+3。</span>' : '毎夜3ずつ冷めます。'}</p>
+      <p class="dim">企業の依頼を受けると、ほかの企業のヒートが上がります。標的にした企業はさらに上がります。100に達すると隠れ家が襲撃され、待機中のランナーで防衛します。${G.chapter >= 4 ? '<span class="pink">第4章からは毎夜+3。</span>' : '手を出さなかった企業は、毎夜1ずつ冷めます。'}</p>
     </section>
   </div>
   <section class="roster">
@@ -498,6 +498,8 @@ function stepReport(out) {
     <dl class="ledger">${out.upkeep.map(([l, v]) => `<div><dt>${esc(l)}</dt><dd class="num pink">−${fmt(v)}</dd></div>`).join('')}
       <div class="tot"><dt>合計</dt><dd class="num pink">−${fmt(out.upkeepTotal)}cr</dd></div>
       <div class="tot"><dt>所持金</dt><dd class="num ${G.money < 0 ? 'pink' : ''}">${cr(G.money)}</dd></div></dl>
+    <h3>ヒート</h3>
+    <div class="heatlist">${out.heat.map(([c, v, dv]) => `<div class="hrow ${v >= 80 ? 'hot' : ''}"><span>${CLIENTS[c].name}</span><div class="ht"><i style="width:${v}%"></i></div><b class="num">${v}</b><span class="num delta ${dv > 0 ? 'pink' : 'dim'}">${dv > 0 ? '+' : dv < 0 ? '−' : '±'}${Math.abs(dv)}</span></div>`).join('')}</div>
     ${out.events.length ? `<h3>この夜のできごと</h3><ul class="events">${out.events.map((e) => `<li class="${e.kind}">${esc(e.text)}</li>`).join('')}</ul>` : ''}
     <div class="mact"><button class="primary" data-act="next">${G.ended ? '結末へ' : `夜${G.night}へ`}</button></div>`;
 }

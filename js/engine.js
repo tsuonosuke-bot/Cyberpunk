@@ -657,8 +657,11 @@ function settle(ms, out) {
   }
   const heat = { ...res.heat };
   if (job.target && CLIENTS[job.target].kind === 'corp') heat[job.target] = (heat[job.target] || 0) + Math.round(job.heat * (res.success ? 1 : 0.5));
-  if (CLIENTS[job.client].kind === 'corp') for (const c of CORPS) if (c !== job.client && c !== job.target) heat[c] = (heat[c] || 0) + job.rank * 3;
-  for (const c in heat) G.heat[c] = clamp(G.heat[c] + heat[c], 0, 100);
+  if (CLIENTS[job.client].kind === 'corp') for (const c of CORPS) if (c !== job.client && c !== job.target) heat[c] = (heat[c] || 0) + job.rank * 4;
+  for (const c in heat) {
+    G.heat[c] = clamp(G.heat[c] + heat[c], 0, 100);
+    if (heat[c] > 0) out.touched[c] = true;
+  }
   s.heat = heat;
   return s;
 }
@@ -722,7 +725,8 @@ function raid(corp, out) {
 }
 
 function endNight() {
-  const out = { night: G.night, comms: [], settle: [], upkeep: [], upkeepTotal: 0, events: [], story: [] };
+  const out = { night: G.night, comms: [], settle: [], upkeep: [], upkeepTotal: 0, events: [], story: [], touched: {}, heat: [] };
+  const heatBefore = { ...G.heat };
   const tonight = new Set(G.missions.flatMap((m) => teamIds(m.team)));
 
   // 1. 派遣
@@ -797,8 +801,13 @@ function endNight() {
   }
 
   // 4. ヒートと襲撃
-  for (const c of CORPS) G.heat[c] = clamp(G.heat[c] + (G.chapter >= 4 ? 3 : -3), 0, 100);
+  // 手を出した企業は冷めない。第4章からは全社が毎夜+3
+  for (const c of CORPS) {
+    if (G.chapter >= 4) G.heat[c] = clamp(G.heat[c] + 3, 0, 100);
+    else if (!out.touched[c]) G.heat[c] = clamp(G.heat[c] - 1, 0, 100);
+  }
   for (const c of CORPS) if (G.heat[c] >= 100) raid(c, out);
+  out.heat = CORPS.map((c) => [c, G.heat[c], G.heat[c] - heatBefore[c]]);
 
   // 5. 赤字判定
   if (G.money < 0) {

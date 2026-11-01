@@ -155,6 +155,8 @@ button[aria-pressed="true"] { background: var(--ink); color: var(--sheet); }
 .heatlist { display: grid; gap: 6px; }
 .hrow { display: grid; grid-template-columns: 100px 1fr 30px; gap: 10px; align-items: center; font-size: 13px; }
 .hrow b { text-align: right; }
+.msheet .hrow { grid-template-columns: 100px 1fr 30px 36px; }
+.hrow .delta { text-align: right; font-size: 12px; }
 .memorial ul { padding-left: 1.1em; font-size: 13.5px; }
 
 /* ── ランナー ── */
