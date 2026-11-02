@@ -750,18 +750,55 @@ function showTail() {
 
 /* ───────── タイトル・結末 ───────── */
 
+/* 更新直後は、ブラウザが古いファイルと新しいファイルを混ぜて読み込むことがある。
+   同じ場所のファイルをキャッシュを使わずに取り直してから、読み込み直す */
+async function reloadFresh() {
+  const urls = [location.href, ...[...document.querySelectorAll('script[src], link[rel="stylesheet"]')].map((e) => e.src || e.href)]
+    .filter((u) => u.startsWith(location.origin));
+  try { await Promise.all(urls.map((u) => fetch(u, { cache: 'reload' }))); } catch (e) { /* 取れなくても読み込み直す */ }
+  location.reload();
+}
+/* 保存データをそのままファイルに書き出す（読み込めないときの控え） */
+function exportSave() {
+  const raw = rawSave() || (() => { try { return localStorage.getItem(BACKUP_KEY); } catch (e) { return null; } })();
+  if (!raw) return toast('書き出せる保存データがありません');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([raw], { type: 'application/json' }));
+  a.download = `fixers-cut-save-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+const recoveryButtons = () => `<button class="primary big" data-act="reloadfresh">最新のファイルで読み込み直す</button><button class="big" data-act="exportsave">保存データを書き出す</button>`;
+
+/* 描画が止まったときの画面。保存データには触らない */
+function renderCrash(e) {
+  stopLog();
+  modal.hidden = true; modal.innerHTML = ''; UI.modalKey = ''; UI.flow = null;
+  document.body.classList.remove('locked');
+  app.innerHTML = `<div class="title-screen"><div class="ts-in">
+    <div class="label">ERROR</div>
+    <h1 class="logo-big">画面を開けませんでした</h1>
+    <p>ゲームの更新直後に、ブラウザが古いファイルと新しいファイルを混ぜて読み込むと起きることがあります。<b>保存データは消えていません。</b></p>
+    <p>下のボタンで最新のファイルを取り直してください。直らないときは、保存データを書き出して控えておいてください。</p>
+    <div class="ts-actions">${recoveryButtons()}<button class="big" data-act="totitle">タイトルへ</button></div>
+    <p class="dim num">${esc(e && e.message ? e.message : String(e))}</p>
+  </div></div>`;
+}
+
 function renderTitle() {
   City.setMode('full');
   const sv = loadSave();
+  const exists = sv || loadError;
   app.innerHTML = `<div class="title-screen"><div class="ts-in">
     <div class="label">GUILD SIM ・ CYBERPUNK REWORK</div>
     <h1 class="logo-big">FIXER'S CUT<span>フィクサーズ・カット</span></h1>
     <p class="thesis">自分は撃たない。<em>義体のローンを立て替えながら</em>ランナーを夜の街へ送り出し、人間のまま帰ってくるのを待つ。</p>
     <p class="dim">舞台は湾岸の沈みかけた都市ヨミハマ。消えた前任から縄張りと借金を引き継いだ新人フィクサーとして、戦闘も潜入も自動で進む夜を回します。決めるのは次の4つだけです。</p>
     <ul class="decide"><li>誰と、どんな契約で組むか</li><li>どの仕事に、誰を出すか</li><li>出す前に、情報にいくら払うか</li><li>どこまで体を機械にさせるか</li></ul>
+    ${loadError ? `<div class="panel loaderr"><h3 class="pink">保存データを読み込めませんでした</h3><p>データは消さずに残してあります。更新直後なら、最新のファイルで読み込み直すと開けることがあります。</p><div class="actions">${recoveryButtons()}</div><p class="dim num">${esc(loadError)}</p></div>` : ''}
     <div class="ts-actions">
-      ${sv && UI.ask === 'newgame' ? '<button class="danger big" data-act="new">前のデータを消して始める</button>' : `<button class="primary big" data-act="${sv ? 'asknew' : 'new'}">新しく始める</button>`}
-      ${sv ? `<button class="big" data-act="continue">続きから（夜${sv.night}・第${CHAPTERS[sv.chapter].no}章）</button>` : ''}
+      ${exists && UI.ask === 'newgame' ? '<button class="danger big" data-act="new">前のデータを消して始める（控えを1つ残します）</button>' : `<button class="${loadError ? '' : 'primary '}big" data-act="${exists ? 'asknew' : 'new'}">新しく始める</button>`}
+      ${sv ? `<button class="big" data-act="continue">続きから（夜${sv.night}・第${(CHAPTERS[sv.chapter] || { no: '?' }).no}章）</button>` : ''}
     </div>
     <details class="howto"><summary>判定のしくみ</summary>
       <ul>
@@ -815,12 +852,16 @@ function renderEnding() {
 /* ───────── 描画と操作 ───────── */
 
 function render() {
-  if (!G) return renderTitle();
-  if (G.ended && !UI.flow) return renderEnding();
-  City.setMode(UI.tab === 'home' ? 'full' : 'dim');
-  const views = { home: viewHome, scout: viewScout, board: viewBoard, shop: viewShop, doc: viewDoc, log: viewLog };
-  app.innerHTML = hud() + `<main class="view view-${UI.tab}">${views[UI.tab]()}</main>` + dock();
-  renderModal();
+  try {
+    if (!G) return renderTitle();
+    if (G.ended && !UI.flow) return renderEnding();
+    City.setMode(UI.tab === 'home' ? 'full' : 'dim');
+    const views = { home: viewHome, scout: viewScout, board: viewBoard, shop: viewShop, doc: viewDoc, log: viewLog };
+    app.innerHTML = hud() + `<main class="view view-${UI.tab}">${views[UI.tab]()}</main>` + dock();
+    renderModal();
+  } catch (e) {
+    renderCrash(e);
+  }
 }
 
 function act(fn) {
@@ -832,7 +873,10 @@ function act(fn) {
 }
 
 const H_ = {
-  asknew() { UI.ask = 'newgame'; renderTitle(); },
+  asknew() { UI.ask = 'newgame'; render(); },
+  reloadfresh() { reloadFresh(); },
+  exportsave() { exportSave(); },
+  totitle() { G = null; UI.flow = null; UI.ask = null; render(); },
   new() { clearSave(); UI.ask = null; newGame(); UI.tab = 'home'; save(); render(); },
   continue() { G = loadSave(); UI.tab = 'home'; if(G && G.nightInProgress) H_.night(); else render(); },
   restart() { G = null; clearSave(); UI.ask = null; UI.flow = null; render(); },
@@ -956,7 +1000,9 @@ document.addEventListener('click', (e) => {
   const b = e.target.closest('[data-act]');
   if (!b || b.disabled) return;
   const f = H_[b.dataset.act];
-  if (f) { e.preventDefault(); f(b); }
+  if (!f) return;
+  e.preventDefault();
+  try { f(b); } catch (err) { renderCrash(err); }
 });
 
 function boot(data) {

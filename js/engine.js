@@ -234,14 +234,23 @@ function migrate(g) {
   return g;
 }
 
+/* 読み込みに失敗した保存データは消さずに残し、loadError に理由を置く（タイトルで知らせる） */
+let loadError = null;
+const rawSave = () => { try { return localStorage.getItem(SAVE_KEY); } catch (e) { return null; } };
 function loadSave() {
+  loadError = null;
+  const s = rawSave();
+  if (!s) return null;
   try {
-    const s = localStorage.getItem(SAVE_KEY);
-    if (s) { const g = JSON.parse(s); if (g && g.v === 1 && !g.ended) { World.init(g); return migrate(g); } }
-  } catch (e) { /* 読めなければ新規 */ }
+    const g = JSON.parse(s);
+    if (g && g.v === 1 && !g.ended) { World.init(g); return migrate(g); }
+  } catch (e) { loadError = e.message || String(e); }
   return null;
 }
+/* 消す前に、直前の保存データを予備として残す */
+const BACKUP_KEY = SAVE_KEY + '-backup';
 function clearSave() {
+  try { const s = localStorage.getItem(SAVE_KEY); if (s) localStorage.setItem(BACKUP_KEY, s); } catch (e) { /* noop */ }
   try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* noop */ }
 }
 

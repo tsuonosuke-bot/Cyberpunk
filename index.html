@@ -14,6 +14,21 @@
 <div id="modal" class="modal" hidden></div>
 <div id="fx" class="fx" hidden aria-hidden="true"></div>
 
+<script>
+  /* ゲームの読み込み自体が止まったときの最後の受け皿。更新直後に古いファイルが混ざると起きる */
+  addEventListener('load', function () {
+    var app = document.getElementById('app');
+    if (!app || app.innerHTML.trim()) return;
+    app.innerHTML = '<div class="title-screen"><div class="ts-in"><div class="label">ERROR</div><h1 class="logo-big">読み込めませんでした</h1>'
+      + '<p>更新直後に、古いファイルが混ざって読み込まれた可能性があります。<b>保存データは消えていません。</b></p>'
+      + '<div class="ts-actions"><button class="primary big" id="fresh">最新のファイルで読み込み直す</button></div></div></div>';
+    document.getElementById('fresh').onclick = function () {
+      var urls = [location.href].concat([].map.call(document.querySelectorAll('script[src], link[rel="stylesheet"]'), function (e) { return e.src || e.href; }))
+        .filter(function (u) { return u.indexOf(location.origin) === 0; });
+      Promise.all(urls.map(function (u) { return fetch(u, { cache: 'reload' }).catch(function () {}); })).then(function () { location.reload(); });
+    };
+  });
+</script>
 <script src="js/data.js"></script>
 <script src="js/engine.js"></script>
 <script src="js/world.js"></script>

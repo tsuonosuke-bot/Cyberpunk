@@ -545,3 +545,4 @@ button[aria-pressed="true"] { background: var(--ink); color: var(--sheet); }
 .r-legend .traitline { color: var(--pink); }
 .cw.tier2 { border-left: 3px solid color-mix(in srgb, var(--blue) 60%, transparent); }
 .cw.tier3 { border-left: 3px solid var(--pink); }
+.loaderr { border-top-color: var(--pink); max-width: 60ch; }
