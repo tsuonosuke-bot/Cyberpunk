@@ -14,11 +14,11 @@ const RANK_ENEMY = {
   3: { dv: 17, atk: 16, dice: 4, plus: 3 },
 };
 const ROLE_CYBER = {
-  solo: ['arm', 'optics', 'synapse', 'plating', 'painblock', 'reflex', 'milplate', 'heart'],
-  net: ['jack', 'coproc', 'ears', 'painblock', 'firewall', 'tacai'],
-  tech: ['toolfinger', 'coproc', 'plating', 'ears', 'tacai', 'chameleon'],
-  med: ['medkit', 'coproc', 'plating', 'voice', 'heart', 'emochip'],
-  driver: ['steering', 'synapse', 'plating', 'optics', 'reflex'],
+  solo: ['arm', 'arm2', 'optics', 'optics2', 'synapse', 'reflex', 'reflex3', 'plating', 'milplate', 'plating3', 'painblock', 'heart', 'heart2'],
+  net: ['jack', 'jack2', 'coproc', 'coproc2', 'ears', 'ears2', 'painblock', 'firewall', 'tacai', 'tacai2'],
+  tech: ['toolfinger', 'toolfinger2', 'coproc', 'coproc2', 'plating', 'milplate', 'ears', 'ears2', 'tacai', 'tacai2', 'chameleon'],
+  med: ['medkit', 'coproc', 'coproc2', 'plating', 'milplate', 'voice', 'voice2', 'heart', 'heart2', 'emochip'],
+  driver: ['steering', 'steering2', 'synapse', 'reflex', 'plating', 'milplate', 'optics', 'optics2'],
 };
 
 const rnd = Math.random;
@@ -49,18 +49,34 @@ const allMods = (r) => { const m = cyberMods(r), g = gearMods(r); for (const k i
 const stat = (r, k) => r.base[k] + (allMods(r)[k] || 0);
 const skill = (r, k) => Math.max(0, (r.skills[k] || 0) + (allMods(r)[k] || 0));
 const maxHp = (r) => 11 + stat(r, 'BODY') * 4;
-const maxHum = (r) => r.base.EMP * 10;
+const traitOf = (r) => TRAITS[r.trait] || {};
+const maxHum = (r) => traitOf(r).humCap || r.base.EMP * 10 + (traitOf(r).humBonus || 0);
+/* 義体の人間性コスト。資質で軽くなる */
+const hlCost = (r, c) => Math.max(1, Math.round(CYBER[c].hl * (traitOf(r).hlMult || 1)));
+const cyberLine = (c) => CYBER[c].line || c;
+/* 同じ系統の上位モデルは下位モデルと入れ替わる。入れられないときは理由を返す */
+function cyberBlocker(r, c) {
+  if (r.cyber.includes(c)) return 'もう入っています';
+  const same = r.cyber.find((x) => cyberLine(x) === cyberLine(c));
+  if (same && CYBER[same].tier >= CYBER[c].tier) return '同じ系統の上位モデルが入っています';
+  return null;
+}
+/* 入れたときに減る人間性（換装なら差の分） */
+function cyberHumanityDelta(r, c) {
+  const same = r.cyber.find((x) => cyberLine(x) === cyberLine(c));
+  return hlCost(r, c) - (same ? hlCost(r, same) : 0);
+}
 const armorMax = (r) => r.armorBase + (allMods(r).armor || 0);
 
 /* 使った技能は少しずつ伸びる。素の技能 n→n+1 に n+4 回の判定が要る（上限10） */
 const SKILL_CAP = 10;
-const xpNeed = (raw) => raw + 4;
+const xpNeed = (raw, r) => Math.max(2, raw + 4 - ((r && traitOf(r).xpBonus) || 0));
 function gainXp(r, sk, n) {
   r.xp ||= {};
   const ups = [];
   r.xp[sk] = (r.xp[sk] || 0) + n;
-  while ((r.skills[sk] || 0) < SKILL_CAP && r.xp[sk] >= xpNeed(r.skills[sk] || 0)) {
-    r.xp[sk] -= xpNeed(r.skills[sk] || 0);
+  while ((r.skills[sk] || 0) < SKILL_CAP && r.xp[sk] >= xpNeed(r.skills[sk] || 0, r)) {
+    r.xp[sk] -= xpNeed(r.skills[sk] || 0, r);
     r.skills[sk] = (r.skills[sk] || 0) + 1;
     ups.push(r.skills[sk]);
   }
@@ -78,10 +94,11 @@ function power(r) {
   return best;
 }
 function stipendFor(r) {
-  return clamp(Math.round(((power(r) - 8) * 40 + 100) / 50) * 50, 100, 400);
+  const pay = traitOf(r).pay || 1;
+  return clamp(Math.round(((power(r) - 8) * 40 + 100) * pay / 50) * 50, 100, Math.round(400 * pay / 50) * 50);
 }
 function demand(r) {
-  const v = (300 + (power(r) - 10) * 100) * (r.origin === 'drifter' ? 0.8 : 1) * (r.humanity <= 30 ? 1.3 : 1);
+  const v = (300 + (power(r) - 10) * 100) * (r.origin === 'drifter' ? 0.8 : 1) * (r.humanity <= 30 ? 1.3 : 1) * (traitOf(r).pay || 1);
   return Math.max(200, Math.round(v / 50) * 50);
 }
 function humZone(h) {
@@ -111,6 +128,11 @@ function pickGender() {
 }
 
 const genBio = (origin) => pick(BIOS[origin].past) + pick(BIOS[origin].quirk);
+function rollTrait() {
+  let x = rnd();
+  for (const [k, p] of TRAIT_ODDS) { if (x < p) return k; x -= p; }
+  return null;
+}
 
 function makeRunner(role, opt = {}) {
   const R = ROLES[role];
@@ -130,12 +152,13 @@ function makeRunner(role, opt = {}) {
     id: G.nextId++, name: opt.name || freshName(), gender: opt.gender || pickGender(), role, origin, contact, base, skills,
     cyber: (opt.cyber || []).slice(), gear: {}, xp: {}, armorBase: R.armor, story: opt.story || null, bio: opt.bio || genBio(origin),
     contract: 'commission', stipend: 0, pref: opt.pref || pick(['any', 'any', 'any', 'commission', 'exclusive']),
+    trait: opt.trait !== undefined ? opt.trait : opt.story ? null : rollTrait(),
     loyalty: 50, discontent: 0, wallet: rint(0, 600), lazarus: false,
     status: 'idle', therapy: 0, elite: 0, perk: false, jobs: 0, kills: 0, joined: G.night,
   };
   r.hp = maxHp(r);
   r.armor = armorMax(r);
-  r.humanity = maxHum(r) - r.cyber.reduce((s, c) => s + CYBER[c].hl, 0);
+  r.humanity = maxHum(r) - r.cyber.reduce((s, c) => s + hlCost(r, c), 0);
   return r;
 }
 
@@ -155,8 +178,8 @@ function newGame() {
     repeats: {}, vouchers: { cyber: 0, intel: 0 }, pending: [], archive: [], nextId: 1,
     storyQueue: ['intro'], awaitEnding: false, ended: null, lastReport: null,
   };
-  const a = makeRunner('solo', { name: 'ジロウ', gender: 'm', origin: 'street', pref: 'any' });
-  const b = makeRunner('driver', { name: 'サエ', gender: 'f', origin: 'drifter', pref: 'any' });
+  const a = makeRunner('solo', { name: 'ジロウ', gender: 'm', origin: 'street', pref: 'any', trait: null });
+  const b = makeRunner('driver', { name: 'サエ', gender: 'f', origin: 'drifter', pref: 'any', trait: null });
   a.wallet = 200; b.wallet = 100;
   G.runners.push(a, b);
   World.init(G);
@@ -200,6 +223,9 @@ function migrate(g) {
   for (const r of [...g.runners, ...g.scouts]) {
     r.gear ||= {};
     r.xp ||= {};
+    r.trait ??= null;
+    // 系統を入れる前に同じ系統を重ねて入れていたら、いちばん上のモデルだけ残す（人間性はそのまま）
+    r.cyber = r.cyber.filter((c) => !r.cyber.some((x) => x !== c && cyberLine(x) === cyberLine(c) && CYBER[x].tier > CYBER[c].tier));
     if (r.gender) continue;
     let h = 0;
     for (const ch of r.name + r.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
@@ -225,7 +251,7 @@ function refreshScouts() {
   G.scouts = [];
   const hiredOrGone = (k) => G.runners.some((r) => r.story === k) || G.memorial.some((r) => r.story === k) || G.flags['story_' + k];
   if (reached('cipher') && !hiredOrGone('kagerou')) G.scouts.push(makeStory('kagerou'));
-  else if (G.night >= 3 && rnd() < 0.2) {
+  else if (G.night >= 3 && rnd() < 0.35) {
     const k = pick(['yoru', 'haruka', 'shigure', 'mikoto'].filter((x) => !hiredOrGone(x)));
     if (k) G.scouts.push(makeStory(k));
   }
@@ -350,7 +376,7 @@ function snap(r) {
     id: r.id, name: r.name, role: r.role, st, sk, hp: r.hp, maxHp: maxHp(r), armor: r.armor, armorMax: armorMax(r),
     cy: cyberMods(r), gm, gearOf, ap: Object.values(r.gear || {}).some((id) => GEAR[id] && GEAR[id].ap),
     pain: r.cyber.includes('painblock'), medkit: r.cyber.includes('medkit'),
-    heart: r.cyber.includes('heart'), firewall: r.cyber.includes('firewall'),
+    heart: r.cyber.includes('heart2') ? 3 : r.cyber.includes('heart') ? 2 : 0, firewall: r.cyber.includes('firewall'),
     iceguard: Object.values(r.gear || {}).some((id) => GEAR[id] && GEAR[id].iceguard),
     nonlethal: Object.values(r.gear || {}).some((id) => GEAR[id] && GEAR[id].nonlethal),
     perk: r.perk ? ROLES[r.role].perk.id : null, lazarus: r.lazarus, humanity: r.humanity,
@@ -528,10 +554,10 @@ function deathSave(ctx, m) {
   m.down = true;
   let bonus = ctx.all.some((x) => x !== m && alive(x) && x.role === 'med') ? 1 : 0;
   if (ctx.all.some((x) => x !== m && alive(x) && x.perk === 'surgeon')) bonus += 2;
-  if (m.heart) bonus += 2;
+  if (m.heart) bonus += m.heart;
   const r = d(10), need = m.st.BODY + bonus;
   if (r < need) {
-    if (m.heart && r >= need - 2) credit(ctx, m, CYBER.heart.name);
+    if (m.heart && r >= need - m.heart) credit(ctx, m, CYBER[m.heart === 3 ? 'heart2' : 'heart'].name);
     const surgeon = ctx.all.find((x) => x !== m && alive(x) && x.perk === 'surgeon');
     if (surgeon && r >= need - 2) credit(ctx, surgeon, ROLES.med.perk.name);
     L(ctx, m.name, `死亡セーブ d10(${r}) ＜ BODY ${m.st.BODY}${bonus ? `＋${bonus}` : ''}　生きているが動けない`, 'warn');
@@ -1076,7 +1102,7 @@ function endNight() {
     }
     if (r.humanity <= 0) { desert(r, out); continue; }
     if (r.contract === 'commission' && r.status === 'idle') {
-      const opts = ROLE_CYBER[r.role].filter((c) => !r.cyber.includes(c) && cyberPrice(c) <= r.wallet);
+      const opts = ROLE_CYBER[r.role].filter((c) => !cyberBlocker(r, c) && cyberPrice(c) <= r.wallet);
       const wish = gearWish(r);
       if (wish.length && rnd() < 0.3) {
         const id = pick(wish);
@@ -1084,10 +1110,10 @@ function endNight() {
         r.wallet += equipGear(r, id);
         out.events.push({ kind: 'ok', text: `${r.name}が自腹で「${GEAR[id].name}」を買った（${GEAR[id].desc}）` });
       } else if (opts.length && rnd() < 0.25) {
-        const c = pick(opts);
+        const c = pick(opts), loss = cyberHumanityDelta(r, c);
         r.wallet -= cyberPrice(c);
         installCyber(r, c);
-        out.events.push({ kind: 'warn', text: `${r.name}が自腹で「${CYBER[c].name}」を入れた。ヒューマニティ −${CYBER[c].hl}` });
+        out.events.push({ kind: 'warn', text: `${r.name}が自腹で「${CYBER[c].name}」を入れた。ヒューマニティ −${loss}` });
       }
       if (rnd() < 0.02 + 0.05 * Math.min(r.discontent, 4)) {
         leaveRunner(r);
@@ -1170,15 +1196,17 @@ function fire(r) {
 const cyberPrice = (c) => Math.round((CYBER[c].loan[0] * CYBER[c].loan[1] * 0.8 * World.priceMultiplier()) / 50) * 50;
 function installCyber(r, c) {
   if (G) G.flags.anyCyber = true;
-  const hpRatio = r.hp / maxHp(r);
+  const hpRatio = r.hp / maxHp(r), armorLost = armorMax(r) - r.armor;
+  r.humanity -= cyberHumanityDelta(r, c);
+  r.cyber = r.cyber.filter((x) => cyberLine(x) !== cyberLine(c));
   r.cyber.push(c);
-  r.humanity -= CYBER[c].hl;
   r.hp = Math.round(maxHp(r) * hpRatio);
-  if (CYBER[c].mods.armor) r.armor += CYBER[c].mods.armor;
+  r.armor = Math.max(0, armorMax(r) - armorLost);
 }
 function buyCyber(r, c, pay) {
   if (r.status === 'mission') return '仕事中です';
-  if (r.cyber.includes(c)) return 'もう入っています';
+  const blocked = cyberBlocker(r, c);
+  if (blocked) return blocked;
   const half = G.vouchers.cyber > 0 ? 0.5 : 1;
   if (pay === 'loan') {
     if (r.contract !== 'exclusive') return '歩合のランナーには立て替えられません';

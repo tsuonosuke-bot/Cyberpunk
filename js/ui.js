@@ -1,7 +1,7 @@
 /* FIXER'S CUT — 画面と操作 */
 
 const UI = {
-  tab: 'home', job: null, route: 0, team: {}, doc: null, shop: null, ask: null,
+  tab: 'home', job: null, route: 0, team: {}, doc: null, shop: null, cyCat: 'all', ask: null,
   toast: '', toastT: 0, flow: null, modalKey: '', timer: 0, play: null, est: { key: '', val: null },
 };
 const app = document.getElementById('app');
@@ -77,7 +77,7 @@ function perkLine(r) {
 
 function runnerCard(r, mode, idx) {
   const R = ROLES[r.role];
-  const xpOf = (k) => (r.skills[k] || 0) >= SKILL_CAP ? 1 : ((r.xp || {})[k] || 0) / xpNeed(r.skills[k] || 0);
+  const xpOf = (k) => (r.skills[k] || 0) >= SKILL_CAP ? 1 : ((r.xp || {})[k] || 0) / xpNeed(r.skills[k] || 0, r);
   const skills = SKILLS.filter((k) => skill(r, k) > 0).map((k) => `<span title="次の上昇まで ${Math.round(xpOf(k) * 100)}%">${k}<b class="num">${skill(r, k)}</b>${mode === 'scout' ? '' : `<i class="xp"><i style="width:${Math.round(xpOf(k) * 100)}%"></i></i>`}</span>`).join('');
   const gear = Object.values(r.gear || {}).filter((id) => GEAR[id]);
   let contract = '', actions = '';
@@ -102,14 +102,15 @@ function runnerCard(r, mode, idx) {
       <button class="primary" data-act="hire" data-v="${idx}" data-c="exclusive" ${r.pref === 'commission' ? 'disabled' : ''}>専属で雇う</button>
     </div>`;
   }
-  return `<article class="runner ${mode} ${r.status === 'mission' ? 'away' : ''}">
+  return `<article class="runner ${mode} ${r.status === 'mission' ? 'away' : ''} ${r.trait ? 'r-' + TRAITS[r.trait].rarity : ''}">
     <header>
       ${portraitImg(r, 'lg')}
-      <div class="nmrow"><b class="nm">${esc(r.name)}</b>${r.story ? '<span class="chip p">物語つき</span>' : ''}${r.lazarus ? '<span class="chip b">ラザロ</span>' : ''}</div>
+      <div class="nmrow"><b class="nm">${esc(r.name)}</b>${r.story ? '<span class="chip p">物語つき</span>' : ''}${r.trait ? `<span class="chip trait ${TRAITS[r.trait].rarity}">${TRAITS[r.trait].rarity === 'legend' ? '超希少' : '希少'}・${TRAITS[r.trait].name}</span>` : ''}${r.lazarus ? '<span class="chip b">ラザロ</span>' : ''}</div>
       <span class="role">${R.tag}<small>${R.name}</small></span>
     </header>
     <div class="meta">${ORIGINS[r.origin].name} ・ ${contactText(r)}${mode === 'roster' ? ` ・ <span class="st st-${r.status}${r.hp <= 0 ? ' st-down' : ''}">${statusText(r)}</span>` : ''}</div>
     ${mode !== 'doc' ? `<p class="bio">${esc(r.bio || R.desc)}</p>` : ''}
+    ${r.trait ? `<div class="traitline">${TRAITS[r.trait].desc}</div>` : ''}
     ${bars(r)}
     <div class="stats">${STATS.map((k) => `<span><i>${k}</i><b class="num">${stat(r, k)}</b></span>`).join('')}</div>
     <div class="skills">${skills}</div>
@@ -432,31 +433,45 @@ function viewDoc() {
   const busy = r.status === 'mission';
   const half = G.vouchers.cyber > 0;
   const tc = treatCost(r), rc = repairCost(r);
-  const cat = Object.keys(CYBER).map((c) => {
+  // 部位のカテゴリごとに、系統と段階の順で並べる
+  const card = (c) => {
     const cw = CYBER[c];
-    const owned = r.cyber.includes(c);
+    const owned = r.cyber.includes(c), blocked = cyberBlocker(r, c);
+    const replaces = r.cyber.find((x) => x !== c && cyberLine(x) === cyberLine(c));
     const rec = ROLE_CYBER[r.role].includes(c);
     const per = Math.round(cw.loan[0] * (half ? 0.5 : 1) * World.priceMultiplier());
     const price = Math.round(cyberPrice(c) * (half ? 0.5 : 1));
-    const after = r.humanity - cw.hl;
+    const loss = cyberHumanityDelta(r, c), after = r.humanity - loss;
     const za = humZone(after);
+    const preview = [...r.cyber.filter((x) => cyberLine(x) !== cyberLine(c)), c];
+    const verb = replaces && !blocked ? '換装：' : '';
     let btns;
     if (owned) btns = '<small class="dim">導入済み</small>';
+    else if (blocked) btns = `<small class="dim">${blocked}</small>`;
     else if (busy) btns = '<small class="dim">仕事中</small>';
-    else if (r.contract === 'exclusive') btns = `<button data-act="cyber" data-r="${r.id}" data-c="${c}" data-v="loan">ローンで立て替える</button><button data-act="cyber" data-r="${r.id}" data-c="${c}" data-v="cash" ${price > G.money ? 'disabled' : ''}>現金で払う</button>`;
-    else btns = `<button data-act="cyber" data-r="${r.id}" data-c="${c}" data-v="wallet" ${price > r.wallet ? 'disabled' : ''}>本人の手持ちで払う</button>`;
-    return `<div class="cw ${rec ? 'rec' : ''} ${owned ? 'owned' : ''}">
-      <div class="cwh"><b>${cw.name}</b><span class="label">${cw.part}</span>${rec ? '<span class="chip b">相性</span>' : ''}</div>
-      <div class="cwp">${owned ? '' : `${portraitImg(r, 'md')}<span class="dim">→</span>${portraitImg(r, 'md', { cyber: [...r.cyber, c], humanity: after })}<small class="dim">入れた後</small>`}</div>
+    else if (r.contract === 'exclusive') btns = `<button data-act="cyber" data-r="${r.id}" data-c="${c}" data-v="loan">${verb}ローンで立て替える</button><button data-act="cyber" data-r="${r.id}" data-c="${c}" data-v="cash" ${price > G.money ? 'disabled' : ''}>${verb}現金で払う</button>`;
+    else btns = `<button data-act="cyber" data-r="${r.id}" data-c="${c}" data-v="wallet" ${price > r.wallet ? 'disabled' : ''}>${verb}本人の手持ちで払う</button>`;
+    return `<div class="cw ${rec ? 'rec' : ''} ${owned || blocked ? 'owned' : ''} tier${cw.tier}">
+      <div class="cwh"><b>${cw.name}</b><span class="label">${cw.part}</span>${cw.tier > 1 ? `<span class="chip o">上位 Mk.${'I'.repeat(cw.tier)}</span>` : ''}${rec ? '<span class="chip b">相性</span>' : ''}</div>
+      <div class="cwp">${owned || blocked ? '' : `${portraitImg(r, 'md')}<span class="dim">→</span>${portraitImg(r, 'md', { cyber: preview, humanity: after })}<small class="dim">入れた後</small>`}</div>
       <p>${cw.desc}</p>
+      ${replaces && !blocked ? `<p class="dim">「${CYBER[replaces].name}」と入れ替える。人間性は差の分だけ減る</p>` : ''}
       <dl class="cwn">
         <div><dt>ローン</dt><dd class="num">${per}cr/夜 ×${cw.loan[1]}</dd></div>
         <div><dt>現金</dt><dd class="num">${fmt(price)}cr</dd></div>
-        <div class="pink"><dt>人間性</dt><dd class="num">−${cw.hl} → ${after}（${za.name}）</dd></div>
+        <div class="pink"><dt>人間性</dt><dd class="num">${owned || blocked ? `−${hlCost(r, c)}` : `−${loss} → ${after}（${za.name}）`}</dd></div>
       </dl>
       <div class="actions">${btns}</div>
     </div>`;
+  };
+  const cats = Object.keys(CYBER_CATS).filter((k) => UI.cyCat === 'all' || UI.cyCat === k);
+  const order = (a, b) => (cyberLine(a) === cyberLine(b) ? CYBER[a].tier - CYBER[b].tier : Object.keys(CYBER).indexOf(cyberLine(a)) - Object.keys(CYBER).indexOf(cyberLine(b)));
+  const cat = cats.map((k) => {
+    const ids = Object.keys(CYBER).filter((c) => CYBER[c].cat === k).sort(order);
+    const mine = r.cyber.filter((c) => CYBER[c].cat === k).map((c) => CYBER[c].name).join('、');
+    return `<h4 class="slot-h">${CYBER_CATS[k]} <span class="dim">${mine ? `導入済み：${mine}` : 'なし'}</span></h4><div class="cws">${ids.map(card).join('')}</div>`;
   }).join('');
+  const catChips = `<div class="chips" role="group" aria-label="義体の部位">${[['all', 'すべて'], ...Object.entries(CYBER_CATS)].map(([k, l]) => `<button data-act="cycat" data-v="${k}" aria-pressed="${UI.cyCat === k}">${l}<small class="dim num"> ${k === 'all' ? r.cyber.length : r.cyber.filter((c) => CYBER[c].cat === k).length}</small></button>`).join('')}</div>`;
   return `<section>
     <h2 class="sec">闇医者 <span class="label">屋台街の裏</span></h2>
     <div class="chips" role="group" aria-label="診るランナー">${G.runners.map((x) => `<button data-act="doc" data-v="${x.id}" aria-pressed="${x.id === r.id}">${esc(x.name)}</button>`).join('')}</div>
@@ -474,7 +489,8 @@ function viewDoc() {
       <div class="catalog">
         <h3>義体 <span class="label">能力は経験より義体で伸びる</span></h3>
         <p class="dim hint">${r.contract === 'exclusive' ? '専属なので、ローンを立て替えられます。ローンは契約を切っても残ります。' : '歩合のランナーには立て替えられません。本人の手持ちで払います。'}${half ? ' <span class="chip b">割引券あり：半額</span>' : ''}</p>
-        <div class="cws">${cat}</div>
+        ${catChips}
+        ${cat}
       </div>
     </div>
   </section>`;
@@ -861,6 +877,7 @@ const H_ = {
   askfire(b) { UI.ask = 'fire' + b.dataset.r; render(); },
   fire(b) { UI.ask = null; act(() => fire(getR(+b.dataset.r))); },
   doc(b) { UI.doc = +b.dataset.v; render(); },
+  cycat(b) { UI.cyCat = b.dataset.v; render(); },
   shop(b) { UI.shop = +b.dataset.v; render(); },
   gear(b) {
     const r = getR(+b.dataset.r), id = b.dataset.v;

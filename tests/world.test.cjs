@@ -75,7 +75,8 @@ test('gang benefit, hostile interference and security prevent harassment',()=>{
 });
 test('rival job stealing excludes specials and poaching names the rival',()=>{
   const run=game();
-  run('G.night=3; const out={events:[]}; World.beforeNight(out);');
+  // Rivals only take jobs that outlive tonight; pin expiry so random board timing cannot leave nothing to take.
+  run('G.night=3; G.board.forEach(j=>j.expires=10); const out={events:[]}; World.beforeNight(out);');
   assert.equal(run('out.events.some(e=>e.text.includes("引き受けた"))'),true);
   assert.equal(run('const rivalName=World.poached(G.runners[0]); Object.values(World.rivals).some(r=>r.name===rivalName)'),true);
   run('G.night=4; G.rank=2; World.refreshBoard();');

@@ -55,3 +55,41 @@ test('new personal quests appear for loyal exclusive story runners and need them
   assert.equal(run('!!j && j.rival==="kurogane" && j.target===null'),true);
   assert.equal(run('validateTeam(j,{field:[G.runners[0].id],support:[],net:[]}).some(e=>e.includes("本人"))'),true);
 });
+
+test('implant table: every entry has a category, lines point at a lower base model, borrowed looks exist',()=>{
+  const run=game();
+  assert.equal(run(`Object.entries(CYBER).every(([k,c])=>CYBER_CATS[c.cat]&&c.tier>=1&&(!c.line||(CYBER[c.line]&&CYBER[c.line].tier<c.tier&&!CYBER[c.line].line))&&(!c.look||CYBER[c.look]))`),true);
+  assert.equal(run(`Object.keys(CYBER_CATS).every(k=>Object.values(CYBER).some(c=>c.cat===k&&c.tier>=2))`),true);
+  assert.equal(run(`Object.values(CYBER).filter(c=>c.tier>=2).every(c=>c.hl>CYBER[c.line].hl)`),true);
+});
+
+test('a higher model replaces the lower one and costs only the humanity difference; downgrades are refused',()=>{
+  const run=game();
+  run(`const r=G.runners[0]; r.contract='exclusive'; r.cyber=[]; r.humanity=maxHum(r); const h0=r.humanity; buyCyber(r,'optics','cash'); const h1=r.humanity; buyCyber(r,'optics2','cash');`);
+  assert.equal(run('r.cyber.join()'),'optics2');
+  assert.equal(run('h0-h1===CYBER.optics.hl && h1-r.humanity===CYBER.optics2.hl-CYBER.optics.hl'),true);
+  assert.match(run(`buyCyber(r,'optics','cash')`),/上位モデル/);
+  run(`buyCyber(r,'plating','cash'); const am=armorMax(r); r.armor=am-2; buyCyber(r,'milplate','cash');`);
+  assert.equal(run('r.cyber.includes("milplate") && !r.cyber.includes("plating") && r.armor===armorMax(r)-2'),true);
+});
+
+test('rare traits: anomaly caps humanity at 150 and halves implant cost; prodigy learns faster; odds roll from the table',()=>{
+  const run=game();
+  run(`const a=makeRunner('solo',{trait:'anomaly',cyber:['reflex']}); const t=makeRunner('solo',{trait:'tolerant'}); const p=makeRunner('net',{trait:'prodigy'});`);
+  assert.equal(run('maxHum(a)'),150);
+  assert.equal(run('a.humanity'),150-Math.round(12*0.5));
+  assert.equal(run('maxHum(t)===t.base.EMP*10+30 && hlCost(t,"reflex")===9'),true);
+  assert.equal(run('xpNeed(6,p)===8 && xpNeed(6)===10'),true);
+  assert.equal(run('demand(a)>demand(makeRunner("solo",{trait:null,base:a.base,skills:a.skills,origin:a.origin}))'),true);
+  for (const [v,want] of [[.01,'anomaly'],[.05,'tolerant'],[.15,'prodigy'],[.5,null]]) assert.equal(game(v)(`makeRunner('solo').trait`),want);
+  assert.equal(run(`makeStory('kagerou').trait===null && makeStory('yoru').trait==='tolerant' && G.runners.every(r=>r.trait===null)`),true);
+});
+
+test('saves that stacked two models of one line keep only the highest; second-tier heart adds three',()=>{
+  const run=game(.5);
+  run(`const r=G.runners[0]; r.cyber=['synapse','reflex','plating','milplate','arm']; delete r.trait; migrate(G);`);
+  assert.equal(run('r.cyber.join()'),'reflex,milplate,arm');
+  assert.equal(run('r.trait'),null);
+  run(`r.cyber=['heart2']; const m=snap(r); m.st.BODY=4; const ctx=(${ctxOf})({field:[m],support:[],net:[]}); deathSave(ctx,m);`);
+  assert.equal(run('m.down && !m.dead && ctx.credit[m.id+"|"+CYBER.heart2.name]===1'),true); // d10=6 < 4+3
+});

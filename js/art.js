@@ -52,7 +52,8 @@ const portraitSrc = (key) => PORTRAIT_DIR + (PORTRAIT_FILES[key] || `${key}.${PO
 let overlaySeq = 0;
 function implantOverlay(cyber, m, A) {
   const id = `ov${overlaySeq++}`;
-  const has = (k) => cyber.includes(k);
+  // 上位モデルは look に書いた義体の描き方を借りる
+  const has = (k) => cyber.some((c) => ((CYBER[c] && CYBER[c].look) || c) === k);
   const defs = [], out = [];
   const glowP = 'class="gp"', glowB = 'class="gb"';
 
@@ -175,7 +176,7 @@ function implantOverlay(cyber, m, A) {
 /* 肖像のHTML。opt.cyber / opt.humanity で「入れた後」を描ける。opt.glitch で強いグリッチ（0, 1, 2） */
 function portraitImg(r, cls = '', opt = {}) {
   const cyber = opt.cyber || r.cyber || [];
-  const hm = (r.base ? r.base.EMP : 5) * 10;
+  const hm = typeof maxHum === 'function' && r.base ? maxHum(r) : (r.base ? r.base.EMP : 5) * 10;
   const hum = opt.humanity !== undefined ? opt.humanity : r.humanity;
   const m = Math.max(0, Math.min(1, 1 - hum / hm));
   const glitch = opt.glitch !== undefined ? opt.glitch : hum <= 0 ? 2 : hum <= 15 ? 1 : 0;

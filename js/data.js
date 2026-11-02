@@ -99,7 +99,7 @@ const STORY_RUNNERS = {
     name: 'ヨル', gender: 'm', role: 'solo', origin: 'corp', contact: 'mitsukane', pref: 'any',
     base: { BODY: 7, REF: 8, INT: 5, TECH: 4, COOL: 7, EMP: 5 },
     skills: { 射撃: 6, 回避: 5, 隠密: 3, 知覚: 3, 運転: 2, 説得: 2 },
-    cyber: ['arm', 'optics'],
+    cyber: ['arm', 'optics'], trait: 'tolerant',
     bio: 'ミツカネ重工の元警備主任。会社に義体を回収される前に逃げた。腕も目も、もう半分は自分のものではない。',
   },
   haruka: {
@@ -125,28 +125,58 @@ const STORY_RUNNERS = {
   },
 };
 
-/* 義体（12種）。loan = [1夜あたり, 夜数]。現金なら総額の8割。 */
+/* 義体。cat は部位のカテゴリ、line は同じ系統（上位モデルは line に下位モデルのIDを書く）、tier はモデルの段階。
+   同じ系統の上位モデルを入れると下位モデルと入れ替わり、人間性は差の分だけ減る。
+   loan = [1夜あたり, 夜数]。現金なら総額の8割。look は肖像の描き方を借りる義体のID */
+const CYBER_CATS = { nervous: '神経系', brain: '頭脳', senses: '感覚・発声', arms: '腕と手', skin: '体表', organs: '内臓' };
 const CYBER = {
-  arm: { name: '鉄骨アーム', part: '腕', mods: { BODY: 1, 射撃: 1 }, loan: [400, 10], hl: 6, desc: 'BODY+1 射撃+1' },
-  optics: { name: '鷹の目オプティクス', part: '目', mods: { 射撃: 2, 知覚: 1 }, loan: [500, 10], hl: 7, desc: '射撃+2 知覚+1' },
-  synapse: { name: 'シナプス加速器', part: '神経', mods: { REF: 1 }, loan: [600, 10], hl: 9, desc: 'REF+1（射撃・回避・運転に効く）' },
-  plating: { name: '皮下装甲板', part: '皮膚', mods: { armor: 4 }, loan: [400, 10], hl: 5, desc: '防具の上限+4' },
-  coproc: { name: '解析コプロセッサ', part: '脳', mods: { INT: 1 }, loan: [600, 10], hl: 8, desc: 'INT+1（知覚・ICEに効く）' },
-  jack: { name: '高速ニューラルジャック', part: '首', mods: { インターフェース: 2 }, loan: [500, 10], hl: 6, desc: 'インターフェース+2' },
-  toolfinger: { name: '工具指', part: '手', mods: { 電子: 2 }, loan: [300, 10], hl: 4, desc: '電子+2' },
-  ears: { name: '音響センサー', part: '耳', mods: { 知覚: 2, 隠密: 1 }, loan: [300, 10], hl: 4, desc: '知覚+2 隠密+1' },
-  medkit: { name: '皮下メディキット', part: '体内', mods: { 医療: 1 }, loan: [300, 10], hl: 3, desc: '医療+1。休息で自分のHP+5' },
-  steering: { name: '反射ステアリング', part: '脊髄', mods: { 運転: 2 }, loan: [400, 10], hl: 5, desc: '運転+2' },
-  painblock: { name: '痛覚遮断', part: '脳幹', mods: {}, loan: [300, 10], hl: 7, desc: '重傷の−2を無視する' },
-  voice: { name: '声帯変調器', part: '喉', mods: { 説得: 2, 隠密: 1 }, loan: [300, 10], hl: 4, desc: '説得+2 隠密+1' },
-  reflex: { name: '反射増幅器「瞬」', part: '脊椎', mods: { REF: 2 }, loan: [1000, 10], hl: 14, desc: 'REF+2（射撃・回避・運転）。軍の横流し品' },
-  milplate: { name: '軍用皮下装甲', part: '全身', mods: { armor: 6 }, loan: [800, 10], hl: 10, desc: '防具の上限+6' },
-  tacai: { name: '戦術AI「カゲボウシ」', part: '脳', mods: { INT: 1, 知覚: 1 }, loan: [700, 10], hl: 9, desc: 'INT+1 知覚+1。ときどき勝手に話しかけてくる' },
-  firewall: { name: 'ニューラル防壁', part: '脳幹', mods: {}, loan: [400, 10], hl: 4, desc: '黒ICEの逆流と敵ネットランナーの攻撃を受けない' },
-  heart: { name: '人工心臓「ツヅミ」', part: '胸', mods: { BODY: 1 }, loan: [700, 10], hl: 8, desc: 'BODY+1。死亡セーブに+2' },
-  chameleon: { name: '擬態皮膚', part: '皮膚', mods: { 隠密: 3 }, loan: [600, 10], hl: 9, desc: '隠密+3。周りの色を拾って溶け込む' },
-  emochip: { name: '感情抑制チップ', part: '前頭葉', mods: { COOL: 2 }, loan: [500, 10], hl: 12, desc: 'COOL+2（隠密・説得）。心のほうが先に削れる' },
+  // 神経系
+  synapse: { name: 'シナプス加速器', cat: 'nervous', part: '神経', tier: 1, mods: { REF: 1 }, loan: [600, 10], hl: 6, desc: 'REF+1（射撃・回避・運転に効く）' },
+  reflex: { name: '反射増幅器「瞬」', cat: 'nervous', part: '脊椎', line: 'synapse', tier: 2, mods: { REF: 2 }, loan: [1000, 10], hl: 12, desc: 'REF+2（射撃・回避・運転）。軍の横流し品' },
+  reflex3: { name: '反射増幅器「瞬・極」', cat: 'nervous', part: '脊椎', line: 'synapse', tier: 3, look: 'reflex', mods: { REF: 3 }, loan: [1600, 10], hl: 20, desc: 'REF+3。世界が止まって見える。止まって見えるのは世界だけではない' },
+  steering: { name: '反射ステアリング', cat: 'nervous', part: '脊髄', tier: 1, mods: { 運転: 2 }, loan: [400, 10], hl: 4, desc: '運転+2' },
+  steering2: { name: '反射ステアリング・競技仕様', cat: 'nervous', part: '脊髄', line: 'steering', tier: 2, look: 'steering', mods: { 運転: 4 }, loan: [800, 10], hl: 9, desc: '運転+4。湾岸の非合法レースで使われていた型' },
+  painblock: { name: '痛覚遮断', cat: 'nervous', part: '脳幹', tier: 1, mods: {}, loan: [300, 10], hl: 5, desc: '重傷の−2を無視する' },
+  // 頭脳
+  coproc: { name: '解析コプロセッサ', cat: 'brain', part: '脳', tier: 1, mods: { INT: 1 }, loan: [600, 10], hl: 6, desc: 'INT+1（知覚・ICEに効く）' },
+  coproc2: { name: '解析コプロセッサMk.II', cat: 'brain', part: '脳', line: 'coproc', tier: 2, look: 'coproc', mods: { INT: 2 }, loan: [1100, 10], hl: 12, desc: 'INT+2。考える前に答えが出ている' },
+  tacai: { name: '戦術AI「カゲボウシ」', cat: 'brain', part: '脳', tier: 1, mods: { INT: 1, 知覚: 1 }, loan: [700, 10], hl: 8, desc: 'INT+1 知覚+1。ときどき勝手に話しかけてくる' },
+  tacai2: { name: '戦術AI「カゲボウシ改」', cat: 'brain', part: '脳', line: 'tacai', tier: 2, look: 'tacai', mods: { INT: 2, 知覚: 2 }, loan: [1300, 10], hl: 15, desc: 'INT+2 知覚+2。もう黙らない' },
+  jack: { name: '高速ニューラルジャック', cat: 'brain', part: '首', tier: 1, mods: { インターフェース: 2 }, loan: [500, 10], hl: 5, desc: 'インターフェース+2' },
+  jack2: { name: '軍用ニューラルジャック', cat: 'brain', part: '首', line: 'jack', tier: 2, look: 'jack', mods: { インターフェース: 4 }, loan: [1000, 10], hl: 11, desc: 'インターフェース+4。ネットの中のほうが、体より軽い' },
+  firewall: { name: 'ニューラル防壁', cat: 'brain', part: '脳幹', tier: 1, mods: {}, loan: [400, 10], hl: 4, desc: '黒ICEの逆流と敵ネットランナーの攻撃を受けない' },
+  emochip: { name: '感情抑制チップ', cat: 'brain', part: '前頭葉', tier: 1, mods: { COOL: 2 }, loan: [500, 10], hl: 10, desc: 'COOL+2（隠密・説得）。心のほうが先に削れる' },
+  // 感覚・発声
+  optics: { name: '鷹の目オプティクス', cat: 'senses', part: '目', tier: 1, mods: { 射撃: 2, 知覚: 1 }, loan: [500, 10], hl: 5, desc: '射撃+2 知覚+1' },
+  optics2: { name: '鷹の目オプティクスMk.II', cat: 'senses', part: '目', line: 'optics', tier: 2, look: 'optics', mods: { 射撃: 3, 知覚: 2 }, loan: [900, 10], hl: 10, desc: '射撃+3 知覚+2。弾道が線で見える' },
+  ears: { name: '音響センサー', cat: 'senses', part: '耳', tier: 1, mods: { 知覚: 2, 隠密: 1 }, loan: [300, 10], hl: 3, desc: '知覚+2 隠密+1' },
+  ears2: { name: '音響センサー・軍用', cat: 'senses', part: '耳', line: 'ears', tier: 2, look: 'ears', mods: { 知覚: 3, 隠密: 2 }, loan: [600, 10], hl: 7, desc: '知覚+3 隠密+2。壁の向こうの心音まで拾う' },
+  voice: { name: '声帯変調器', cat: 'senses', part: '喉', tier: 1, mods: { 説得: 2, 隠密: 1 }, loan: [300, 10], hl: 3, desc: '説得+2 隠密+1' },
+  voice2: { name: '声帯変調器・詐欺師仕様', cat: 'senses', part: '喉', line: 'voice', tier: 2, look: 'voice', mods: { 説得: 4, 隠密: 1 }, loan: [700, 10], hl: 8, desc: '説得+4 隠密+1。誰の声でも出せる。自分の声は忘れた' },
+  // 腕と手
+  arm: { name: '鉄骨アーム', cat: 'arms', part: '腕', tier: 1, mods: { BODY: 1, 射撃: 1 }, loan: [400, 10], hl: 5, desc: 'BODY+1 射撃+1' },
+  arm2: { name: '鉄骨アームMk.II', cat: 'arms', part: '腕', line: 'arm', tier: 2, look: 'arm', mods: { BODY: 2, 射撃: 2 }, loan: [900, 10], hl: 11, desc: 'BODY+2 射撃+2。反動を腕だけで殺す' },
+  toolfinger: { name: '工具指', cat: 'arms', part: '手', tier: 1, mods: { 電子: 2 }, loan: [300, 10], hl: 3, desc: '電子+2' },
+  toolfinger2: { name: '多機能工具腕', cat: 'arms', part: '手', line: 'toolfinger', tier: 2, look: 'toolfinger', mods: { 電子: 4 }, loan: [700, 10], hl: 8, desc: '電子+4。指が十二本ある' },
+  // 体表
+  plating: { name: '皮下装甲板', cat: 'skin', part: '皮膚', tier: 1, mods: { armor: 4 }, loan: [400, 10], hl: 4, desc: '防具の上限+4' },
+  milplate: { name: '軍用皮下装甲', cat: 'skin', part: '全身', line: 'plating', tier: 2, mods: { armor: 6 }, loan: [800, 10], hl: 8, desc: '防具の上限+6' },
+  plating3: { name: '多層装甲外殻', cat: 'skin', part: '全身', line: 'plating', tier: 3, look: 'milplate', mods: { armor: 9 }, loan: [1400, 10], hl: 14, desc: '防具の上限+9。触れても、もう体温はない' },
+  chameleon: { name: '擬態皮膚', cat: 'skin', part: '皮膚', tier: 1, mods: { 隠密: 3 }, loan: [600, 10], hl: 7, desc: '隠密+3。周りの色を拾って溶け込む' },
+  // 内臓
+  medkit: { name: '皮下メディキット', cat: 'organs', part: '体内', tier: 1, mods: { 医療: 1 }, loan: [300, 10], hl: 3, desc: '医療+1。休息で自分のHP+5' },
+  heart: { name: '人工心臓「ツヅミ」', cat: 'organs', part: '胸', tier: 1, mods: { BODY: 1 }, loan: [700, 10], hl: 6, desc: 'BODY+1。死亡セーブに+2' },
+  heart2: { name: '人工心臓「ツヅミ・弐」', cat: 'organs', part: '胸', line: 'heart', tier: 2, look: 'heart', mods: { BODY: 2 }, loan: [1200, 10], hl: 12, desc: 'BODY+2。死亡セーブに+3。鼓動は、もう聞こえない' },
 };
+
+/* ランナーの資質。まれに付く。humCap は人間性の上限を固定、humBonus は上乗せ、hlMult は義体の人間性コストの倍率、
+   xpBonus は技能の上昇に必要な判定を減らす、pay は分け前の希望と手当の倍率 */
+const TRAITS = {
+  anomaly: { name: '異常適合', rarity: 'legend', humCap: 150, hlMult: 0.5, pay: 1.8, desc: '人間性の上限150、義体の人間性コストが半分。体が機械を拒まない、千人に一人の体質' },
+  tolerant: { name: '適合体質', rarity: 'rare', humBonus: 30, hlMult: 0.75, pay: 1.3, desc: '人間性の上限+30、義体の人間性コストが3/4' },
+  prodigy: { name: '天才肌', rarity: 'rare', xpBonus: 2, pay: 1.2, desc: '技能の伸びが早い（上昇に必要な判定が2回少ない）' },
+};
+const TRAIT_ODDS = [['anomaly', 0.03], ['tolerant', 0.10], ['prodigy', 0.08]];
 
 /* 装備（人間性を削らない成長）。部位ごとに1つ。歩合は本人の手持ち、専属はフィクサーが払う。 */
 const GEAR_SLOTS = { weapon: '武器', body: '防具', tool: '道具' };
