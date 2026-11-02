@@ -325,6 +325,7 @@ button[aria-pressed="true"] { background: var(--ink); color: var(--sheet); }
 .msheet h2 { font-family: var(--body); font-weight: 700; font-size: clamp(19px, 3vw, 24px); line-height: 1.45; }
 .msheet h3 { font-size: 14.5px; margin-top: 4px; }
 .mact { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+.speed { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-right: auto; }
 .verdict { font-family: var(--display); font-size: 22px; letter-spacing: 0.04em; }
 .verdict.ok { color: var(--blue); }
 .verdict.ng { color: var(--pink); }

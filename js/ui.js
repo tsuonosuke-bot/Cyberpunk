@@ -2,13 +2,28 @@
 
 const UI = {
   tab: 'home', job: null, route: 0, team: {}, doc: null, ask: null,
-  toast: '', toastT: 0, flow: null, modalKey: '', timer: 0, est: { key: '', val: null },
+  toast: '', toastT: 0, flow: null, modalKey: '', timer: 0, play: null, est: { key: '', val: null },
 };
 const LANE = { field: '現場', support: '支援', net: 'ネット' };
 const LANE_MAX = { field: 3, support: 2, net: 1 };
 const app = document.getElementById('app');
 const modal = document.getElementById('modal');
 const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* 表示の好み（ゲームのセーブとは別に、ブラウザに残す） */
+const PREF_KEY = 'fixers-cut-prefs-v1';
+const LOG_SPEED = { slow: ['ゆっくり', 320], normal: ['ふつう', 170], fast: ['速く', 60], instant: ['一瞬', 0] };
+const prefs = loadPrefs();
+function loadPrefs() {
+  const p = { speed: 'normal' };
+  try { Object.assign(p, JSON.parse(localStorage.getItem(PREF_KEY) || '{}')); } catch (e) { /* 読めない環境では既定値 */ }
+  if (!LOG_SPEED[p.speed]) p.speed = 'normal';
+  return p;
+}
+function savePrefs() {
+  try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* 保存できない環境では無視 */ }
+}
+const instantLog = () => reduced || prefs.speed === 'instant';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const cr = (n) => `${n < 0 ? '−' : ''}${fmt(Math.abs(n))}cr`;
@@ -464,9 +479,13 @@ function stepComm(c) {
     <h2>${esc(c.title)}</h2>
     <p class="dim">${c.raid ? logo(c.corp) : logo(c.client)} ${head} ${esc(c.route)}</p>
     ${commStrip(c)}
-    <div class="log play">${logLines(c.lines, !reduced) || '<div class="ln on">（通信なし）</div>'}</div>
-    <div class="tail" ${reduced ? '' : 'hidden'}>${tail}</div>
-    <div class="mact"><button data-act="skiplog">すべて表示</button><button class="primary" data-act="next">次へ</button></div>`;
+    <div class="log play">${logLines(c.lines, !instantLog()) || '<div class="ln on">（通信なし）</div>'}</div>
+    <div class="tail" ${instantLog() ? '' : 'hidden'}>${tail}</div>
+    <div class="mact">${reduced ? '' : speedControl()}<button data-act="skiplog">すべて表示</button><button class="primary" data-act="next">次へ</button></div>`;
+}
+
+function speedControl() {
+  return `<div class="speed"><span class="label">表示速度</span><div class="seg" role="group" aria-label="通信の表示速度">${Object.entries(LOG_SPEED).map(([k, [l]]) => `<button data-act="speed" data-v="${k}" aria-pressed="${prefs.speed === k}">${l}</button>`).join('')}</div></div>`;
 }
 
 function stepSettle(s) {
@@ -536,15 +555,15 @@ function renderModal() {
   else if (G && G.storyQueue && G.storyQueue.includes('intro')) { key = 'intro'; html = stepIntro(); }
   if (key === UI.modalKey) return;
   UI.modalKey = key;
-  clearInterval(UI.timer);
+  stopLog();
   if (!key) { modal.hidden = true; modal.innerHTML = ''; document.body.classList.remove('locked'); return; }
   modal.innerHTML = `<div class="msheet" role="dialog" aria-modal="true">${html}</div>`;
   modal.hidden = false;
   document.body.classList.add('locked');
   modal.scrollTop = 0;
   const box = modal.querySelector('.log.play');
-  if (box && !reduced) playLog(box);
-  if (box && reduced) finishStrip();
+  if (box && !instantLog()) playLog(box);
+  if (box && instantLog()) finishStrip();
   stepCutin(key);
 }
 
@@ -610,16 +629,23 @@ function finishStrip() {
   markStrip(null);
 }
 
+/* 1行ごとに次の行を予約する。待ち時間は毎回読むので、速度を変えるとすぐ効く */
 function playLog(box) {
   const lines = [...box.querySelectorAll('.ln')];
   let i = 0;
-  UI.timer = setInterval(() => {
-    if (i >= lines.length) { clearInterval(UI.timer); markStrip(null); showTail(); return; }
+  UI.play = () => {
+    if (i >= lines.length) { UI.play = null; markStrip(null); showTail(); return; }
     const ln = lines[i++];
     ln.classList.add('on');
     markStrip(ln);
     box.scrollTop = box.scrollHeight;
-  }, 170);
+    UI.timer = setTimeout(UI.play, LOG_SPEED[prefs.speed][1]);
+  };
+  UI.timer = setTimeout(UI.play, LOG_SPEED[prefs.speed][1]);
+}
+function stopLog() {
+  clearTimeout(UI.timer);
+  UI.play = null;
 }
 function showTail() {
   const t = modal.querySelector('.tail');
@@ -752,19 +778,26 @@ const H_ = {
     act(() => buyCyber(r, c, b.dataset.v) || (toast(`${r.name}に「${CYBER[c].name}」を入れた。人間性 ${r.humanity}${r.humanity <= 0 ? '。もう戻れない' : ''}`), null));
   },
   night() {
-    clearInterval(UI.timer);
+    stopLog();
     const out = endNight();
     UI.flow = { id: Date.now(), out, step: 0, steps: buildSteps(out) };
     UI.team = {}; UI.est = { key: '', val: null }; UI.ask = null;
     render();
   },
   skiplog() {
-    clearInterval(UI.timer);
+    stopLog();
     modal.querySelectorAll('.log.play .ln').forEach((l) => l.classList.add('on'));
     finishStrip();
     const box = modal.querySelector('.log.play');
     if (box) box.scrollTop = box.scrollHeight;
     showTail();
+  },
+  speed(b) {
+    prefs.speed = b.dataset.v;
+    savePrefs();
+    modal.querySelectorAll('[data-act="speed"]').forEach((x) => x.setAttribute('aria-pressed', x === b));
+    if (prefs.speed === 'instant') return H_.skiplog();
+    if (UI.play) { clearTimeout(UI.timer); UI.timer = setTimeout(UI.play, LOG_SPEED[prefs.speed][1]); }
   },
   next() {
     if (!UI.flow) return;
