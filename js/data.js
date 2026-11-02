@@ -115,7 +115,7 @@ const _ = null;
 const H = (p) => Object.assign(p, { hidden: true });
 const S = (dv, l) => ({ t: 'sneak', dv, l });
 const T = (dv, l) => ({ t: 'trap', dv, l });
-const C = (n, l) => ({ t: 'combat', n, l });
+const C = (n, l, enemyType = 'standard') => ({ t: 'combat', n, l, enemyType });
 const R = (l) => ({ t: 'rest', l });
 const GT = (dv, l) => ({ t: 'gate', dv, l });
 const O = (l) => ({ t: 'goal', l });

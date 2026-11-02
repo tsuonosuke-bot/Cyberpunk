@@ -130,6 +130,8 @@ function newGame() {
   const b = makeRunner('driver', { name: 'サエ', gender: 'f', origin: 'drifter', pref: 'any' });
   a.wallet = 200; b.wallet = 100;
   G.runners.push(a, b);
+  World.init(G);
+  World.nextNight();
   refreshScouts();
   refreshBoard();
   return G;
@@ -153,7 +155,7 @@ function migrate(g) {
 function loadSave() {
   try {
     const s = localStorage.getItem(SAVE_KEY);
-    if (s) { const g = JSON.parse(s); if (g && g.v === 1 && !g.ended) return migrate(g); }
+    if (s) { const g = JSON.parse(s); if (g && g.v === 1 && !g.ended) { World.init(g); return migrate(g); } }
   } catch (e) { /* 読めなければ新規 */ }
   return null;
 }
@@ -172,7 +174,7 @@ function refreshScouts() {
     if (k) G.scouts.push(makeStory(k));
   }
   const roles = shuffle(Object.keys(ROLES));
-  while (G.scouts.length < 3) G.scouts.push(makeRunner(roles.pop()));
+  while (G.scouts.length < 3) G.scouts.push(makeRunner(roles.pop(), World.scoutOptions()));
 }
 
 const hasJob = (tplId) => G.board.some((j) => j.tpl === tplId) || G.missions.some((m) => m.job.tpl === tplId);
@@ -181,6 +183,7 @@ function addJob(tpl, special) {
   const j = clone(tpl);
   j.uid = G.nextId++;
   j.tpl = tpl.id;
+  World.prepareJob(j);
   j.special = !!special;
   j.expires = special ? 9999 : G.night + rint(2, 3);
   j.intel = false;
@@ -207,7 +210,7 @@ function refreshBoard(specialsOnly) {
   if (G.rank < 3 && G.cred >= RANK_CRED[G.rank] && !hasJob('intro' + G.rank)) addJob(INTRO_JOBS[G.rank], true);
   const cj = campaignJob();
   if (cj && !hasJob(cj.id)) addJob(cj, true);
-  if (specialsOnly) return;
+  if (specialsOnly) { World.refreshBoard(); return; }
   const pool = JOBS.filter((t) => t.rank <= G.rank && !hasJob(t.id));
   let normals = G.board.filter((j) => !j.special).length;
   while (normals < 5 && pool.length) {
@@ -218,6 +221,7 @@ function refreshBoard(specialsOnly) {
     addJob(pool.splice(i, 1)[0], false);
     normals++;
   }
+  World.refreshBoard();
   G.board.sort((a, b) => (b.special - a.special) || (b.rank - a.rank) || (b.payout - a.payout));
 }
 
@@ -227,6 +231,7 @@ const teamIds = (t) => [...t.field, ...t.support, ...t.net];
 
 function validateTeam(job, team) {
   const errs = [];
+  if(job.runnerId && !teamIds(team).includes(job.runnerId)) errs.push('個人依頼には本人の参加が必要です');
   if (!team.field.length) errs.push('現場に1人以上必要です');
   const all = teamIds(team).map(getR).filter(Boolean);
   if (all.some((r) => !available(r))) errs.push('出せないランナーが含まれています');
@@ -266,8 +271,9 @@ function estimate(job, routeIdx, team, n = 240) {
 function payPreview(job, team) {
   const ids = teamIds(team);
   const n = ids.length || 1;
-  const fee = Math.round(job.payout * BROKER_RATE);
-  const per = Math.round((job.payout - fee) / n);
+  const payout = Math.round((job.basePayout ?? job.payout) * World.payoutMultiplier(job));
+  const fee = Math.round(payout * BROKER_RATE);
+  const per = Math.round((payout - fee) / n);
   const rows = ids.map(getR).filter(Boolean).map((r) => ({ r, per, excl: r.contract === 'exclusive', short: r.contract !== 'exclusive' && per < demand(r) }));
   const excl = rows.filter((x) => x.excl).length * per;
   return { fee, per, excl, rows, total: fee + excl };
@@ -276,7 +282,7 @@ function payPreview(job, team) {
 function intelCost(job) {
   if (G.vouchers.intel > 0) return 0;
   const half = G.runners.some((r) => r.contact === job.client);
-  return Math.round(INTEL_COST[job.rank] * (half ? 0.5 : 1));
+  return Math.round(INTEL_COST[job.rank] * (half ? 0.5 : 1) * World.intelMultiplier(job));
 }
 function buyIntel(uid) {
   const job = G.board.find((j) => j.uid === uid);
@@ -290,10 +296,13 @@ function buyIntel(uid) {
 }
 
 function dispatch(uid, routeIdx, team) {
+  if(G.nightInProgress) return ['判断待ちの通信を完了してください'];
   const job = G.board.find((j) => j.uid === uid);
   if (!job) return ['依頼が見つかりません'];
   const errs = validateTeam(job, team);
   if (errs.length) return errs;
+  job.basePayout ??= job.payout;
+  job.payout = Math.round(job.basePayout * World.payoutMultiplier(job));
   G.board = G.board.filter((j) => j !== job);
   for (const id of teamIds(team)) getR(id).status = 'mission';
   G.missions.push({ uid, job, routeIdx, team: clone(team), start: G.night, result: null });
@@ -339,7 +348,7 @@ function abort(ctx, reason) {
 function check(ctx, m, sk, dv) {
   const stK = SKILL_STAT[sk];
   const sv = m.st[stK], kv = m.sk[sk] || 0;
-  let bonus = 0;
+  let bonus = World.checkBonus(ctx, m, sk);
   if (m.perk === 'backdoor' && sk === 'インターフェース') bonus += 2;
   if (m.perk === 'getaway' && sk === '運転') bonus += 3;
   const wound = !m.pain && m.hp < m.maxHp / 2 ? 2 : 0;
@@ -363,6 +372,7 @@ function hit(ctx, m, dmg, pierce) {
     ? `${m.name} 被弾 ${dmg}（防具無視）   HP ${m.hp}/${m.maxHp}`
     : `被弾 ${dmg} − 防具 ${a} ＝ ${pen}   HP ${m.hp}/${m.maxHp}${note}`, pen > 0 ? 'ng' : '');
   if (m.hp <= 0 && !m.down) deathSave(ctx, m);
+  if (!m.dead && ((ctx.team.field.includes(m) && m.hp < m.maxHp / 2) || (m.down && !m.rescued))) requestDecision(ctx, m.down ? '死亡セーブを生き延びた仲間が動けない' : '現場の仲間が重傷になった');
 }
 
 function deathSave(ctx, m) {
@@ -384,46 +394,69 @@ function deathSave(ctx, m) {
 }
 
 function combat(ctx, n, label, o = {}) {
-  const E = RANK_ENEMY[ctx.rank];
-  const foes = o.boss
-    ? [{ ...o.boss }]
-    : Array.from({ length: n }, () => ({ name: label, hits: 1, dv: E.dv, atk: E.atk, dice: E.dice, plus: E.plus }));
-  L(ctx, '', `${label}と交戦　敵${foes.length}${o.boss ? `（耐久${o.boss.hits}）` : ''}${o.ambush ? '　待ち伏せ。先に撃たれる' : ''}`, o.ambush ? 'ng' : 'info');
+  const E = RANK_ENEMY[ctx.rank], type = o.enemyType || 'standard';
   const fighters = () => (o.chase ? ctx.team.field.concat(ctx.team.support) : ctx.team.field).filter(alive);
-  const enemyTurn = () => {
-    for (const e of foes.filter((f) => f.hits > 0)) {
-      const tg = fighters();
-      if (!tg.length) break;
-      const t = pick(tg);
-      const c = check(ctx, t, '回避', e.atk);
-      if (!c.ok) { L(ctx, t.name, `${e.name}の攻撃をかわせない`, 'ng', c.calc); hit(ctx, t, roll(e.dice, 6) + e.plus, false); }
-    }
-  };
-  if (o.ambush) enemyTurn();
-  for (let round = 0; round < 3; round++) {
-    for (const m of fighters()) {
-      const shots = m.perk === 'double' ? 2 : 1;
-      for (let s = 0; s < shots; s++) {
-        const e = foes.find((f) => f.hits > 0);
-        if (!e) break;
-        const c = check(ctx, m, '射撃', e.dv);
-        L(ctx, m.name, `${e.name}を${s ? '続けて' : ''}攻撃`, c.ok ? 'ok' : 'ng', c.calc);
-        if (!c.ok) continue;
-        e.hits--;
-        if (e.hits > 0) { sub(ctx, `${e.name} 残り耐久${e.hits}`); continue; }
-        m.kills++;
-        if (m.humanity <= 15 && rnd() < 0.35) {
-          addHeat(ctx, ctx.job.target, 4);
-          sub(ctx, `${m.name}が過剰な暴力をふるった${ctx.job.target ? `　${CLIENTS[ctx.job.target].short}のヒート +4` : ''}`, 'ng');
-        }
+  let s = ctx.combatState;
+  if (!s) {
+    const count = type === 'swarm' ? n + 2 : n;
+    const foes = o.boss ? [{...o.boss}] : Array.from({length:count},()=>({
+      name:World.enemies[type] || label, hits:type==='armored'?2:1,
+      dv:o.dv ?? E.dv+(type==='swarm'?-1:type==='standard'?0:2),
+      atk:E.atk+(type==='swarm'?-1:type==='standard'?0:2),
+      dice:type==='swarm'?2:E.dice,plus:E.plus}));
+    s = ctx.combatState = {n,label,o,foes,round:0,stage:'start',enemy:0,player:0,shot:0,hacked:false};
+    L(ctx,'',label+'と交戦：'+(World.enemies[type]||label)+' '+count+'体','info');
+  }
+  const end = (ok, reason) => { ctx.combatState=null; if(reason)abort(ctx,reason); else L(ctx,'',label+'を制圧','ok'); return ok; };
+  while (true) {
+    if (s.stage==='start') {
+      s.stage=o.ambush?'enemy':'player';
+      s.ambush=!!o.ambush;
+      if(type==='sniper') {
+        const scout=best(ctx.all,'知覚'),c=scout&&check(ctx,scout,'知覚',18);
+        if(c&&c.ok)L(ctx,scout.name,'狙撃手を先に発見。先制射撃を防いだ','ok',c.calc);
+        else if(fighters().length){const t=pick(fighters());L(ctx,t.name,'狙撃手の先制射撃','ng');hit(ctx,t,roll(3,6)+5,false);}
+        if(ctx.alert)return null;
       }
     }
-    if (!foes.some((f) => f.hits > 0)) { L(ctx, '', `${label}を制圧`, 'ok'); return true; }
-    enemyTurn();
-    if (!fighters().length) { abort(ctx, `${label}との交戦で全員が倒れた。撤退`); return false; }
+    if(s.stage==='player') {
+      const list=o.chase?ctx.team.field.concat(ctx.team.support):ctx.team.field;
+      while(s.player<list.length) {
+        const m=list[s.player];
+        if(!alive(m)){s.player++;s.shot=0;continue;}
+        while(s.shot<(m.perk==='double'?2:1)) {
+          s.shot++;
+          const foe=s.foes.find(f=>f.hits>0);if(!foe)return end(true);
+          const c=check(ctx,m,'射撃',foe.dv);L(ctx,m.name,foe.name+'を攻撃',c.ok?'ok':'ng',c.calc);
+          if(c.ok){foe.hits-=type==='armored'&&ctx.all.some(x=>alive(x)&&x.role==='tech')?2:1;
+            if(foe.hits<=0){m.kills++;if(m.humanity<=15&&rnd()<.35){addHeat(ctx,ctx.job.target,4);sub(ctx,m.name+'が過剰な暴力をふるった','ng');}}
+            else sub(ctx,'装甲兵はまだ動く。テックがいれば弱点を突ける','warn');}
+        }
+        s.player++;s.shot=0;
+      }
+      if(!s.foes.some(f=>f.hits>0))return end(true);
+      s.stage='enemy';s.enemy=0;s.hacked=false;
+    }
+    if(s.stage==='enemy') {
+      if(type==='hacker'&&!s.hacked&&s.foes.some(f=>f.hits>0)) {
+        s.hacked=true;const nr=ctx.team.net.find(alive);
+        if(nr){const c=check(ctx,nr,'インターフェース',18);L(ctx,nr.name,'敵ネットランナーのICE攻撃',c.ok?'ok':'ng',c.calc,'net');if(!c.ok)hit(ctx,nr,roll(2,6),true);}
+        else {ctx.mods.extraEnemy=Math.max(1,ctx.mods.extraEnemy);L(ctx,'','敵ネットランナーが増援を呼んだ','ng');}
+        if(ctx.alert)return null;
+      }
+      while(s.enemy<s.foes.length) {
+        const foe=s.foes[s.enemy++];if(foe.hits<=0)continue;
+        const targets=fighters();if(!targets.length)break;
+        const t=pick(targets),c=check(ctx,t,'回避',foe.atk);
+        if(!c.ok){L(ctx,t.name,foe.name+'の攻撃をかわせない','ng',c.calc);hit(ctx,t,roll(foe.dice,6)+foe.plus,false);}
+        if(ctx.alert)return null;
+      }
+      if(!fighters().length)return end(false,label+'との交戦で全員が倒れた。撤退');
+      if(!s.ambush)s.round++;s.ambush=false;
+      if(s.round>=3)return end(false,label+'を押し切れず撤退');
+      s.stage='player';s.player=0;s.shot=0;
+    }
   }
-  abort(ctx, `${label}を押し切れず撤退`);
-  return false;
 }
 
 function rest(ctx, p) {
@@ -457,6 +490,7 @@ function fieldPhase(ctx, p) {
       L(ctx, m.name, p.l, c.ok ? 'ok' : 'ng', c.calc);
       if (!c.ok) {
         addHeat(ctx, tgt, 8); ctx.mods.extraEnemy++;
+        requestDecision(ctx, '罠の警報が鳴った');
         sub(ctx, `警報${tgt ? `　${CLIENTS[tgt].name}のヒート +8` : ''}　次の交戦で敵+1`, 'ng');
         hit(ctx, m, roll(2, 6), false);
       }
@@ -465,7 +499,7 @@ function fieldPhase(ctx, p) {
     case 'combat': {
       const n = p.n + ctx.mods.extraEnemy;
       ctx.mods.extraEnemy = 0;
-      combat(ctx, n, p.l, { ambush: p.hidden && !ctx.job.intel });
+      combat(ctx, n, p.l, { ambush: p.hidden && !ctx.job.intel, enemyType: p.enemyType, dv:p.enemyDV });
       break;
     }
     case 'rest': rest(ctx, p); break;
@@ -485,13 +519,15 @@ function fieldPhase(ctx, p) {
     case 'escape': {
       if (ctx.mods.chase) {
         ctx.mods.chase = false;
+        ctx.afterCombat = 'escapeDrive';
         L(ctx, '', '警報で追手がかかった。追撃戦', 'ng');
         if (!combat(ctx, 2, '追手', { chase: true })) return;
+        ctx.afterCombat = null;
       }
       const m = best(SUP.concat(F), '運転'); if (!m) return;
       const c = check(ctx, m, '運転', p.dv);
       L(ctx, m.name, p.l, c.ok ? 'ok' : 'ng', c.calc);
-      if (!c.ok) { sub(ctx, '振り切れない', 'ng'); combat(ctx, 2, '追いすがる追手', { chase: true }); }
+      if (!c.ok) { ctx.afterCombat = null; sub(ctx, '振り切れない', 'ng'); combat(ctx, 2, '追いすがる追手', { chase: true }); }
       break;
     }
     case 'drive': {
@@ -542,44 +578,74 @@ function netFail(ctx, p) {
   switch (p.fx) {
     case 'cam': ctx.mods.extraEnemy++; sub(ctx, 'カメラに捕捉された。次の交戦で敵+1', 'ng'); break;
     case 'door': ctx.mods.gateUp += 4; sub(ctx, '扉の制御を奪えない。次の扉のDV+4', 'ng'); break;
-    case 'alarm': ctx.mods.chase = true; sub(ctx, '警報が作動。逃走は追撃戦になる', 'ng'); break;
+    case 'alarm': requestDecision(ctx, 'ネットの警報が鳴った'); ctx.mods.chase = true; sub(ctx, '警報が作動。逃走は追撃戦になる', 'ng'); break;
     case 'trace': addHeat(ctx, tgt, 6); sub(ctx, `逆探知された${tgt ? `　${CLIENTS[tgt].short}のヒート +6` : ''}`, 'ng'); break;
     case 'data': abort(ctx, `${p.l}を抜けず撤退`); break;
   }
 }
 
-function resolveMission(job, routeIdx, team, sim) {
+// Interactive contexts contain only serializable data; no future rolls occur while waiting.
+function requestDecision(ctx, reason) {
+  if (ctx.interactive && !ctx.aborted && ctx.decisions < 2) ctx.alert = ctx.alert || reason;
+}
+function missionContext(job, routeIdx, team, sim, interactive = false) {
+  World.prepareJob(job);
   const route = job.routes[routeIdx];
-  const blind = sim && !job.intel;
-  const all = [...team.field, ...team.support, ...team.net];
-  const ctx = {
-    job, rank: job.rank, team, all, sim, log: [], heat: {}, lazarus: [],
-    mods: { extraEnemy: 0, gateUp: 0, chase: false },
-    rewardMult: 1, aborted: false, reason: '', goals: 0, need: 0, night: 1, clock: 22 * 60, ph: 0, lane: 'field',
-  };
-  const len = route.field.length;
-  for (let i = 0; i < len; i++) {
-    for (const p of [route.field[i], route.net[i]]) {
-      if (p && (p.t === 'goal' || p.fx === 'data') && !(blind && p.hidden)) ctx.need++;
+  const ctx = { job, routeIdx, rank: job.rank, team, sim, interactive,
+    log: [], heat: {}, lazarus: [], mods: {extraEnemy:0, gateUp:0, chase:false},
+    rewardMult:1, aborted:false, reason:'', goals:0, need:0, night:1, clock:1320,
+    ph:0, lane:'net', stage:0, decisions:0, alert:null, waiting:false };
+  ctx.all = teamIds(team);
+  World.context(ctx);
+  ctx.environmentNight = G.night;
+  for (const p of [...route.field,...route.net])
+    if (p && (p.t === 'goal' || p.fx === 'data') && !(sim && !job.intel && p.hidden)) ctx.need++;
+  return ctx;
+}
+function runMission(ctx, nightLimit = Infinity) {
+  // Rebind aliases after JSON load so HP and armour remain shared with the team.
+  ctx.all = teamIds(ctx.team);
+  const route = ctx.job.routes[ctx.routeIdx];
+  if (ctx.waiting) return ctx;
+  while (ctx.ph < route.field.length && !ctx.aborted) {
+    ctx.night = Math.floor(ctx.ph / 5) + 1;
+    if (ctx.night > nightLimit) return ctx;
+    if (ctx.stage === 0) ctx.clock = 1320 + (ctx.ph % 5) * 78 + rint(2,20);
+    ctx.lane = ctx.stage === 0 ? 'net' : 'field';
+    let p = (ctx.stage === 0 ? route.net : route.field)[ctx.ph];
+    if (ctx.sim && !ctx.job.intel && p && p.hidden) p = null;
+    if (ctx.combatState) {
+      const s=ctx.combatState;
+      const ok=combat(ctx,s.n,s.label,s.o);
+      if(ok && ctx.afterCombat === 'escapeDrive') { ctx.afterCombat=null; fieldPhase(ctx,p); }
+    } else if (p) { if (ctx.stage === 0) netPhase(ctx,p); else fieldPhase(ctx,p); }
+    // Combat keeps its own cursor if interrupted immediately after a hit.
+    if (!ctx.combatState) {
+      if (ctx.stage === 0) ctx.stage = 1;
+      else { ctx.stage = 0; ctx.ph++; }
     }
-  }
-  for (let i = 0; i < len; i++) {
-    ctx.night = i < 5 ? 1 : 2;
-    ctx.clock = 22 * 60 + (i % 5) * 78 + rint(2, 20);
-    let n = route.net[i], f = route.field[i];
-    if (blind) { if (n && n.hidden) n = null; if (f && f.hidden) f = null; }
-    ctx.ph = i;
-    ctx.lane = 'net';
-    if (n) netPhase(ctx, n);
-    ctx.lane = 'field';
-    if (!ctx.aborted && f) fieldPhase(ctx, f);
-    if (!ctx.aborted && team.field.length && team.field.every((m) => !alive(m))) abort(ctx, '現場の全員が動けない。撤退');
-    if (ctx.aborted) break;
+    if (ctx.alert && !ctx.aborted) { ctx.waiting = true; ctx.decisions++; return ctx; }
+    if (ctx.team.field.length && ctx.team.field.every(m=>!alive(m))) abort(ctx,'現場の全員が動けない。撤退');
   }
   ctx.success = !ctx.aborted && ctx.goals >= ctx.need;
   if (!ctx.aborted && !ctx.success) ctx.reason = '目標に届かなかった';
-  ctx.endNight = ctx.aborted ? ctx.night : (len > 5 ? 2 : 1);
+  ctx.endNight = ctx.aborted ? ctx.night : Math.ceil(route.field.length / 5);
+  ctx.finished = true;
   return ctx;
+}
+function resolveMission(job, routeIdx, team, sim) {
+  return runMission(missionContext(job,routeIdx,team,sim));
+}
+function missionDecision(uid, proceed) {
+  const ms = G.missions.find(m=>m.uid===uid);
+  if (!ms || !ms.progress || !ms.progress.waiting) return;
+  const ctx = ms.progress;
+  ctx.all=teamIds(ctx.team);
+  ms.shownLog = ctx.log.length;
+  ctx.waiting = false; ctx.alert = null;
+  L(ctx,'',proceed ? 'フィクサーの指示：続行' : 'フィクサーの指示：撤退', 'warn');
+  if (!proceed) { abort(ctx,'フィクサーの判断で撤退'); ctx.combatState = null; }
+  save();
 }
 
 /* ───────── 精算 ───────── */
@@ -683,13 +749,14 @@ function settle(ms, out) {
     if (heat[c] > 0) out.touched[c] = true;
   }
   s.heat = heat;
+  World.settle(ms, s, out);
   return s;
 }
 
 /* ───────── 夜の終わり ───────── */
 
 function upkeepItems() {
-  const items = [['隠れ家の家賃', RENT]];
+  const items = [['隠れ家の家賃', RENT], ...World.upkeep()];
   for (const r of G.runners) if (r.contract === 'exclusive') items.push([`${r.name}の手当`, r.stipend]);
   const laz = G.runners.filter((r) => r.lazarus).length;
   if (laz) items.push([`ラザロ会費 ×${laz}`, laz * LAZARUS_FEE]);
@@ -722,7 +789,7 @@ function desert(r, out) {
 
 function raid(corp, out) {
   const defenders = G.runners.filter(available).sort((a, b) => power(b) - power(a)).slice(0, 3);
-  const job = { title: `${CLIENTS[corp].name}の襲撃`, rank: G.rank, target: null, routes: [{ field: [C(2 + G.rank, `${CLIENTS[corp].short}の襲撃部隊`)], net: [_] }] };
+  const job = { title: `${CLIENTS[corp].name}の襲撃`, rank: G.rank, district: 'street', tags: ['defense'], target: null, routes: [{ field: [C(Math.max(1, 2 + G.rank - World.securityReduction()), `${CLIENTS[corp].short}の襲撃部隊`)], net: [_] }] };
   let ok = false, log = [{ t: '', who: '', text: '隠れ家には動けるランナーがいなかった', kind: 'ng' }];
   if (defenders.length) {
     const team = { field: defenders.map(snap), support: [], net: [] };
@@ -746,28 +813,42 @@ function raid(corp, out) {
 }
 
 function endNight() {
+  G.nightInProgress = true;
   const out = { night: G.night, comms: [], settle: [], upkeep: [], upkeepTotal: 0, events: [], story: [], touched: {}, heat: [], deserted: [] };
+  for (const ms of G.missions) {
+    if (ms.result) continue;
+    const ctx = ms.progress || (ms.progress = missionContext(ms.job, ms.routeIdx, snapTeam(ms.team), false, true));
+    if (ctx.environmentNight !== G.night) {
+      World.context(ctx); ctx.environmentNight=G.night;
+    }
+    runMission(ctx, G.night - ms.start + 1);
+    if (ctx.waiting) {
+      const rt = ms.job.routes[ms.routeIdx];
+      out.pending = true;
+      out.comms.push({uid:ms.uid, title:ms.job.title, route:rt.name, k:ctx.night, of:ms.job.nights,
+        phases:rt, intel:ms.job.intel, pending:true, reason:ctx.alert,
+        lines:ctx.log.slice(ms.shownLog || 0), ends:false});
+      save(); return out;
+    }
+    if (ctx.finished) ms.result = {success:ctx.success,reason:ctx.reason,log:ctx.log,heat:ctx.heat,
+      lazarus:ctx.lazarus,rewardMult:ctx.rewardMult,endNight:ctx.endNight,members:teamIds(ctx.team)};
+  }
+  World.beforeNight(out);
   const heatBefore = { ...G.heat };
   const tonight = new Set(G.missions.flatMap((m) => teamIds(m.team)));
 
   // 1. 派遣
   const done = [];
   for (const ms of G.missions) {
-    if (!ms.result) {
-      const team = snapTeam(ms.team);
-      const res = resolveMission(ms.job, ms.routeIdx, team, false);
-      ms.result = {
-        success: res.success, reason: res.reason, log: res.log, heat: res.heat, lazarus: res.lazarus,
-        rewardMult: res.rewardMult, endNight: res.endNight, members: teamIds(team),
-      };
-    }
+    const partial = ms.progress;
+    const result = ms.result || {log:partial.log,endNight:Infinity};
     const k = G.night - ms.start + 1;
-    const ends = k >= ms.result.endNight;
+    const ends = k >= result.endNight;
     const rt = ms.job.routes[ms.routeIdx];
     out.comms.push({
       title: ms.job.title, route: rt.name, k, of: ms.job.nights,
       phases: { field: rt.field, net: rt.net }, intel: ms.job.intel, client: ms.job.client,
-      lines: ms.result.log.filter((l) => l.night === k), ends, success: ends ? ms.result.success : null,
+      lines: result.log.filter((l) => l.night === k), visibleLines: result.log.slice(ms.shownLog || 0).filter(l=>l.night===k), ends, success: ends ? result.success : null,
     });
     if (ends) { out.settle.push(settle(ms, out)); done.push(ms); }
   }
@@ -811,7 +892,7 @@ function endNight() {
       }
       if (rnd() < 0.02 + 0.05 * Math.min(r.discontent, 4)) {
         leaveRunner(r);
-        out.events.push({ kind: 'ng', text: `${r.name}（歩合）が他のフィクサーに引き抜かれた` });
+        out.events.push({ kind: 'ng', text: `${r.name}（歩合）が${World.poached(r)}に引き抜かれた` });
         continue;
       }
     }
@@ -823,6 +904,7 @@ function endNight() {
     }
   }
 
+  World.afterNight(out, tonight);
   // 4. ヒートと襲撃
   // 手を出した企業は冷めない。第4章からは全社が毎夜+3
   for (const c of CORPS) {
@@ -840,7 +922,9 @@ function endNight() {
   if (G.negStreak >= 3) G.ended = { type: 'bankrupt' };
 
   // 6. 翌夜の準備
+  G.nightInProgress = false;
   G.night++;
+  World.nextNight();
   refreshScouts();
   refreshBoard();
   G.archive.unshift({ night: out.night, comms: out.comms });
@@ -882,7 +966,7 @@ function fire(r) {
   return null;
 }
 
-const cyberPrice = (c) => Math.round((CYBER[c].loan[0] * CYBER[c].loan[1] * 0.8) / 50) * 50;
+const cyberPrice = (c) => Math.round((CYBER[c].loan[0] * CYBER[c].loan[1] * 0.8 * World.priceMultiplier()) / 50) * 50;
 function installCyber(r, c) {
   const hpRatio = r.hp / maxHp(r);
   r.cyber.push(c);
@@ -896,7 +980,7 @@ function buyCyber(r, c, pay) {
   const half = G.vouchers.cyber > 0 ? 0.5 : 1;
   if (pay === 'loan') {
     if (r.contract !== 'exclusive') return '歩合のランナーには立て替えられません';
-    G.loans.push({ id: 'loan' + G.nextId++, label: `${r.name}の${CYBER[c].name}`, perNight: Math.round(CYBER[c].loan[0] * half), nightsLeft: CYBER[c].loan[1], runnerId: r.id });
+    G.loans.push({ id: 'loan' + G.nextId++, label: `${r.name}の${CYBER[c].name}`, perNight: Math.round(CYBER[c].loan[0] * half * World.priceMultiplier()), nightsLeft: CYBER[c].loan[1], runnerId: r.id });
   } else if (pay === 'cash') {
     if (r.contract !== 'exclusive') return '歩合のランナーには立て替えられません';
     const p = Math.round(cyberPrice(c) * half);
@@ -932,7 +1016,7 @@ function therapy(r) {
   if (r.status !== 'idle') return '今は受けられません';
   if (r.humanity >= maxHum(r)) return 'ヒューマニティは減っていません';
   if (THERAPY_COST > G.money) return '所持金が足りません';
-  G.money -= THERAPY_COST; r.status = 'therapy'; r.therapy = 3;
+  G.money -= THERAPY_COST; r.status = 'therapy'; r.therapy = World.therapyNights();
   return null;
 }
 

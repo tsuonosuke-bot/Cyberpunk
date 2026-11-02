@@ -111,7 +111,7 @@ function runnerCard(r, mode, idx) {
     <div class="stats">${STATS.map((k) => `<span><i>${k}</i><b class="num">${stat(r, k)}</b></span>`).join('')}</div>
     <div class="skills">${skills}</div>
     ${r.cyber.length ? `<div class="cy"><span class="label">義体</span> ${r.cyber.map((c) => CYBER[c].name).join('、')}</div>` : ''}
-    ${mode === 'roster' ? perkLine(r) : ''}
+    ${mode === 'roster' ? perkLine(r) + World.perkHtml(r) : ''}
     ${contract}
     ${actions}
   </article>`;
@@ -187,6 +187,7 @@ function viewHome() {
     ${chapterProgress()}
   </section>
   ${tut}
+  ${World.homeHtml()}
   <div class="cols">
     <section class="panel"><h3>派遣中</h3><ul class="mlist">${missions}</ul></section>
     <section class="panel"><h3 class="pink">毎晩、確実に出ていく</h3>
@@ -220,7 +221,7 @@ function viewScout() {
 /* ───────── 依頼盤 ───────── */
 
 const PH_DV = {
-  sneak: (p) => `隠密 DV${p.dv}`, trap: (p) => `知覚 DV${p.dv}`, combat: (p) => `敵${p.n}`, rest: () => 'HP回復',
+  sneak: (p) => `隠密 DV${p.dv}`, trap: (p) => `知覚 DV${p.dv}`, combat: (p) => `敵${p.n}・${World.enemies[p.enemyType || 'standard']}`, rest: () => 'HP回復',
   gate: (p) => `電子 DV${p.dv}`, goal: () => '目標', escape: (p) => `運転 DV${p.dv}`, drive: (p) => `運転 DV${p.dv}`,
   talk: (p) => `説得 DV${p.dv}`, med: (p) => `医療 DV${p.dv}`, boss: () => '耐久3', ice: (p) => `ICE DV${p.dv}`,
 };
@@ -241,7 +242,7 @@ function phaseCell(p, i, job) {
   if (!p) return `<div class="ph empty"><i>${i + 1}</i>—</div>`;
   if (p.hidden && !job.intel) return `<div class="ph fog"><i>${i + 1}</i><span class="q">???</span></div>`;
   const cls = { combat: 'enemy', boss: 'enemy', goal: 'goal', ice: 'ice', trap: 'trap' }[p.t] || '';
-  return `<div class="ph ${cls}${p.fx === 'data' ? ' netgoal' : ''}${p.hidden ? ' bought' : ''}"><i>${i + 1}</i>${esc(p.l)}<span class="dv">${PH_DV[p.t](p)}</span></div>`;
+  return `<div class="ph ${cls}${p.fx === 'data' ? ' netgoal' : ''}${p.hidden ? ' bought' : ''}"><i>${i + 1}</i>${esc(p.l)}<span class="dv">${p.t === 'combat' && !job.intel ? `敵${p.n}・???` : PH_DV[p.t](p)}</span></div>`;
 }
 
 function phaseTable(job, ri) {
@@ -335,8 +336,8 @@ function jobCard(j) {
   ].join('');
   return `<button class="job ${UI.job === j.uid ? 'sel' : ''}" data-act="job" data-v="${j.uid}">
     <div class="jtop"><span class="rk">R${j.rank}</span>${tags}<span class="exp dim">${j.special ? '' : `あと${j.expires - G.night + 1}夜`}</span></div>
-    <b class="jt">${esc(j.title)}</b>
-    <div class="jm">${logo(j.client)}${CLIENTS[j.client].short}${j.target ? ` → ${logo(j.target)}${CLIENTS[j.target].short}` : ''} ・ ${j.nights}夜 ・ <span class="num">${fmt(j.payout)}cr</span>${j.repeat >= 2 && !j.special ? ' <span class="pink">値下がり</span>' : ''}</div>
+    <b class="jt">${esc(j.title)}</b>${World.jobBadge(j)}
+    <div class="jm">${logo(j.client)}${CLIENTS[j.client].short}${j.target ? ` → ${logo(j.target)}${CLIENTS[j.target].short}` : ''} ・ ${j.nights}夜 ・ <span class="num">${fmt(Math.round((j.basePayout ?? j.payout) * World.payoutMultiplier(j)))}cr</span>${j.repeat >= 2 && !j.special ? ' <span class="pink">値下がり</span>' : ''}</div>
     ${j.req.length ? `<div class="req">${j.req.map((r) => `<span>${ROLES[r].name}</span>`).join('')}</div>` : ''}
   </button>`;
 }
@@ -348,12 +349,12 @@ function jobDetail(job) {
   const cost = intelCost(job);
   return `<article class="jd" id="jd">
     <div class="label jdlabel">${logo(job.client)}${CLIENTS[job.client].name}${job.target ? ` → 標的 ${logo(job.target)}${CLIENTS[job.target].name}` : ''}</div>
-    <h2>${esc(job.title)}</h2>
+    <h2>${esc(job.title)}</h2>${World.jobBadge(job)}
     <p>${esc(job.desc)}</p>
     <dl class="facts">
       <div><dt>評判ランク</dt><dd>R${job.rank}</dd></div>
       <div><dt>夜数</dt><dd class="num">${job.nights}</dd></div>
-      <div><dt>依頼額</dt><dd class="num">${fmt(job.payout)}cr</dd></div>
+      <div><dt>依頼額</dt><dd class="num">${fmt(Math.round((job.basePayout ?? job.payout) * World.payoutMultiplier(job)))}cr</dd></div>
     </dl>
     <h3>ルート</h3>
     <div class="toggle" role="group" aria-label="ルート">${job.routes.map((r, i) => `<button data-act="route" data-v="${i}" aria-pressed="${i === UI.route}">${esc(r.name)}</button>`).join('')}</div>
@@ -394,7 +395,7 @@ function viewDoc() {
     const cw = CYBER[c];
     const owned = r.cyber.includes(c);
     const rec = ROLE_CYBER[r.role].includes(c);
-    const per = Math.round(cw.loan[0] * (half ? 0.5 : 1));
+    const per = Math.round(cw.loan[0] * (half ? 0.5 : 1) * World.priceMultiplier());
     const price = Math.round(cyberPrice(c) * (half ? 0.5 : 1));
     const after = r.humanity - cw.hl;
     const za = humZone(after);
@@ -425,7 +426,7 @@ function viewDoc() {
           <h3>処置</h3>
           <div class="carerow"><span>治療（HPを全快）</span><button data-act="treat" data-r="${r.id}" ${!tc || r.status !== 'idle' ? 'disabled' : ''}>${tc ? cr(tc) : '不要'}</button></div>
           <div class="carerow"><span>防具の修理</span><button data-act="repair" data-r="${r.id}" ${!rc || busy ? 'disabled' : ''}>${rc ? cr(rc) : '不要'}</button></div>
-          <div class="carerow"><span>セラピー（人間性+15、3夜は出せない）</span><button data-act="therapy" data-r="${r.id}" ${r.status !== 'idle' || r.humanity >= maxHum(r) ? 'disabled' : ''}>${cr(THERAPY_COST)}</button></div>
+          <div class="carerow"><span>セラピー（人間性+15、${World.therapyNights()}夜は出せない）</span><button data-act="therapy" data-r="${r.id}" ${r.status !== 'idle' || r.humanity >= maxHum(r) ? 'disabled' : ''}>${cr(THERAPY_COST)}</button></div>
           <div class="carerow"><span>救急サブスク「ラザロ」<small class="dim">死亡セーブに失敗しても1回回収。回収費は報酬額の30%</small></span><button data-act="lazarus" data-r="${r.id}" aria-pressed="${r.lazarus}">${r.lazarus ? '加入中（100cr/夜）' : '加入する（100cr/夜）'}</button></div>
         </div>
       </div>
@@ -466,12 +467,13 @@ function buildSteps(out) {
   out.comms.forEach((c, i) => st.push({ k: 'comm', i }));
   out.settle.forEach((s, i) => st.push({ k: 'settle', i }));
   out.story.forEach((n) => st.push({ k: 'story', n }));
-  st.push({ k: 'report' });
+  if (!out.pending) st.push({ k: 'report' });
   return st;
 }
 
 function stepComm(c) {
   const head = c.raid ? '<span class="chip p">襲撃</span>' : `<span class="label">${c.k}/${c.of}夜目</span>`;
+  if(c.pending) return pendingComm(c);
   const tail = c.ends
     ? `<p class="verdict ${c.success ? 'ok' : 'ng'}">${c.success ? (c.raid ? '襲撃を退けた' : '依頼成功') : (c.raid ? '防衛失敗' : '依頼失敗')}</p>`
     : '<p class="verdict dim">夜明け。続きは次の夜に届く</p>';
@@ -479,9 +481,15 @@ function stepComm(c) {
     <h2>${esc(c.title)}</h2>
     <p class="dim">${c.raid ? logo(c.corp) : logo(c.client)} ${head} ${esc(c.route)}</p>
     ${commStrip(c)}
-    <div class="log play">${logLines(c.lines, !instantLog()) || '<div class="ln on">（通信なし）</div>'}</div>
+    <div class="log play">${logLines(c.visibleLines || c.lines, !instantLog()) || '<div class="ln on">（通信なし）</div>'}</div>
     <div class="tail" ${instantLog() ? '' : 'hidden'}>${tail}</div>
     <div class="mact">${reduced ? '' : speedControl()}<button data-act="skiplog">すべて表示</button><button class="primary" data-act="next">次へ</button></div>`;
+}
+
+function pendingComm(c) {
+  return '<div class="label">通信・判断待ち（最大2回）</div><h2>'+esc(c.title)+'</h2>'+commStrip(c)+
+    '<div class="log play">'+logLines(c.lines,!instantLog())+'</div>'+
+    '<div class="tail" '+(instantLog()?'':'hidden')+'><p class="pink">'+esc(c.reason)+'</p><p>続行は残りを判定。撤退は報酬なし、標的ヒートは失敗時と同じ。家賃・手当は通常どおりです。</p><div class="mact"><button class="primary" data-act="decision" data-v="yes" data-uid="'+c.uid+'">続行</button><button data-act="decision" data-v="no" data-uid="'+c.uid+'">撤退</button></div></div>'+speedControl()+'<button data-act="skiplog">すべて表示</button>';
 }
 
 function speedControl() {
@@ -551,6 +559,8 @@ function renderModal() {
     if (s.k === 'settle') html = stepSettle(UI.flow.out.settle[s.i]);
     if (s.k === 'story') html = stepStory(s.n);
     if (s.k === 'report') html = stepReport(UI.flow.out);
+  } else if (G && G.personalNotices && G.personalNotices.length) {
+    key='personal-'+G.personalNotices[0]; html=World.storyHtml(G.personalNotices[0]);
   } else if (G && G.awaitEnding && !G.ended) { key = 'ending'; html = stepEndingChoice(); }
   else if (G && G.storyQueue && G.storyQueue.includes('intro')) { key = 'intro'; html = stepIntro(); }
   if (key === UI.modalKey) return;
@@ -728,7 +738,7 @@ function act(fn) {
 const H_ = {
   asknew() { UI.ask = 'newgame'; renderTitle(); },
   new() { clearSave(); UI.ask = null; newGame(); UI.tab = 'home'; save(); render(); },
-  continue() { G = loadSave(); UI.tab = 'home'; render(); },
+  continue() { G = loadSave(); UI.tab = 'home'; if(G && G.nightInProgress) H_.night(); else render(); },
   restart() { G = null; clearSave(); UI.ask = null; UI.flow = null; render(); },
   closeintro() { G.storyQueue = G.storyQueue.filter((x) => x !== 'intro'); save(); render(); },
   tab(b) { UI.tab = b.dataset.v; UI.ask = null; render(); window.scrollTo(0, 0); },
@@ -777,6 +787,13 @@ const H_ = {
     const r = getR(+b.dataset.r), c = b.dataset.c;
     act(() => buyCyber(r, c, b.dataset.v) || (toast(`${r.name}に「${CYBER[c].name}」を入れた。人間性 ${r.humanity}${r.humanity <= 0 ? '。もう戻れない' : ''}`), null));
   },
+  upgrade(b) { act(()=>World.buyUpgrade(b.dataset.v)); },
+  personalnotice() { G.personalNotices.shift(); UI.tab='board'; save(); render(); },
+  decision(b) {
+    const ctx=G.missions.find(m=>m.uid===+b.dataset.uid)?.progress;
+    if(!ctx?.waiting)return;
+    stopLog(); missionDecision(+b.dataset.uid,b.dataset.v==='yes'); H_.night();
+  },
   night() {
     stopLog();
     const out = endNight();
@@ -800,7 +817,7 @@ const H_ = {
     if (UI.play) { clearTimeout(UI.timer); UI.timer = setTimeout(UI.play, LOG_SPEED[prefs.speed][1]); }
   },
   next() {
-    if (!UI.flow) return;
+    if (!UI.flow || UI.flow.out.pending) return;
     UI.flow.step++;
     if (UI.flow.step >= UI.flow.steps.length) { UI.flow = null; UI.tab = UI.tab === 'log' ? 'log' : UI.tab; }
     render();
@@ -824,7 +841,7 @@ document.addEventListener('click', (e) => {
 function boot(data) {
   City.init();
   if (data && data.G) {
-    G = data.G;
+    G = World.init(data.G);
     Object.assign(UI, data.UI || {});
   }
   render();
