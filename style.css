@@ -546,3 +546,12 @@ button[aria-pressed="true"] { background: var(--ink); color: var(--sheet); }
 .cw.tier2 { border-left: 3px solid color-mix(in srgb, var(--blue) 60%, transparent); }
 .cw.tier3 { border-left: 3px solid var(--pink); }
 .loaderr { border-top-color: var(--pink); max-width: 60ch; }
+
+/* ルール */
+.help { display: grid; gap: 8px; font-size: 13.5px; }
+.help h3 { border-top: 1px solid var(--rule); padding-top: 10px; }
+.help h3:first-child { border-top: 0; padding-top: 0; }
+.help ul:not(.legend) { padding-left: 1.1em; display: grid; gap: 3px; }
+.help .hstat > div { grid-template-columns: 4.5em 1fr; }
+.help .hstat dd { white-space: normal; font-weight: 400; }
+.help .calc { font-size: 15px; }

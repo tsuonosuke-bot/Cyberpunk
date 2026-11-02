@@ -1,7 +1,7 @@
 /* FIXER'S CUT — 画面と操作 */
 
 const UI = {
-  tab: 'home', job: null, route: 0, team: {}, doc: null, shop: null, cyCat: 'all', ask: null,
+  tab: 'home', job: null, route: 0, team: {}, doc: null, shop: null, cyCat: 'all', ask: null, help: false,
   toast: '', toastT: 0, flow: null, modalKey: '', timer: 0, play: null, est: { key: '', val: null },
 };
 const app = document.getElementById('app');
@@ -130,7 +130,7 @@ function hud() {
   const next = G.rank < 3 ? RANK_CRED[G.rank] : null;
   return `<header class="hud"><div class="hud-in">
     <div class="brand"><span class="logo">FIXER'S CUT</span><span class="label">YOMIHAMA ・ 第${chapter().no}章</span></div>
-    ${Comfort.soundButton()}${hintButton()}<dl class="hud-stats">
+    ${Comfort.soundButton()}${hintButton()}${helpButton()}<dl class="hud-stats">
       <div><dt class="label">夜</dt><dd class="num">${G.night}</dd></div>
       <div class="${G.money < 0 ? 'neg' : ''}"><dt class="label">所持金</dt><dd class="num">${cr(G.money)}${G.negStreak ? ` <span class="chip p">赤字 ${G.negStreak}/3</span>` : ''}</dd></div>
       <div><dt class="label">評判</dt><dd>R${G.rank} ${RANK_NAME[G.rank]} <span class="num dim">${G.cred}${next ? `/${next}` : ''}</span></dd></div>
@@ -220,6 +220,84 @@ function viewScout() {
     <p class="dim">抱えているランナー ${G.runners.length}/${ROSTER_MAX}人</p>
     <div class="runners">${G.scouts.map((r, i) => runnerCard(r, 'scout', i)).join('') || '<p class="dim">今夜の候補はもういません。</p>'}</div>
   </section>`;
+}
+
+/* ───────── ルール（能力値と派遣中の判定） ───────── */
+
+const STAT_HELP = {
+  BODY: `最大HP（11＋BODY×4）。HPが0になったときの死亡セーブもBODYで決まる`,
+  REF: '反射神経',
+  INT: '頭の回転と注意力',
+  TECH: '機械と医療の腕',
+  COOL: '度胸と落ち着き',
+  EMP: '人間性の上限（EMP×10。資質で変わる）。判定には使わない',
+};
+const helpButton = () => '<button data-act="help" title="能力値と派遣中の判定ルール">ルール</button>';
+
+function stepHelp() {
+  const used = (k) => SKILLS.filter((s) => SKILL_STAT[s] === k);
+  const stats = STATS.map((k) => `<div><dt><b>${k}</b></dt><dd>${used(k).length ? `${used(k).join('・')}の判定に使う。` : ''}${STAT_HELP[k]}</dd></div>`).join('');
+  const phases = Object.values(PH_FX).map((v) => `<li>${v}</li>`).join('');
+  const ice = Object.entries(ICE_FX).map(([k, v]) => `<li class="blue">${{ cam: 'カメラ網', door: '扉の制御', alarm: '警報系', trace: '逆探知', data: 'データ' }[k]}：${v}</li>`).join('');
+  const ranks = Object.entries(RANK_ENEMY).map(([k, e]) => `<div><dt>ランク${k}</dt><dd class="num">DV${e.dv}・攻撃${e.atk}・${e.dice}d6+${e.plus}</dd></div>`).join('');
+  return `<div class="label">RULES</div><h2>能力値と派遣中の判定</h2>
+  <div class="help">
+    <h3>能力値</h3>
+    <dl class="ledger hstat">${stats}</dl>
+    <p class="dim">技能は能力値に足して使う。義体と装備は能力値か技能に加わる。</p>
+
+    <h3>判定</h3>
+    <p class="calc"><b>能力＋技能＋補正＋d10 ≧ DV</b> で成功</p>
+    <ul>
+      <li>d10で10が出たら、もう1回d10を足す。1が出たら、d10を1回引く</li>
+      <li>HPが最大の半分未満だと−2（${CYBER.painblock.name}で無視できる）</li>
+      <li>補正：${ROLES.net.perk.name}（ICE＋2）、${ROLES.driver.perk.name}（運転＋3）、ネット設備・車庫、専用技能、今夜のニュースと地区の状況</li>
+      <li>判定は、その技能の「能力＋技能」がいちばん高い人が受け持つ。通信の計算式で中身を確かめられる</li>
+      <li>判定に使った技能には経験がたまる</li>
+    </ul>
+
+    <h3>派遣の流れ</h3>
+    <ul>
+      <li>左の列から1つずつ、<b class="blue">ネット</b>→<b>現場</b>の順に進む。5列で1夜</li>
+      <li>隠密・罠は現場の人だけ。扉・説得・医療は現場と支援、運転・逃走は支援と現場から選ばれる</li>
+      <li>ネットはネット枠の1人が受け持つ。いなければ自動で失敗。DV17以上のICEに失敗すると黒ICEの逆流（2d6、防具無視）。データは2回まで挑める</li>
+      <li>現場の「目標」とネットの「データ」をすべて確保して、最後まで撤退しなければ成功</li>
+    </ul>
+    <ul class="legend">${phases}${ice}</ul>
+
+    <h3>交戦</h3>
+    <ul>
+      <li>現場の全員が順に<b>射撃</b>（敵のDV）。当たれば1体倒す。${ROLES.solo.perk.name}のソロは2回撃つ</li>
+      <li>残った敵が1体ずつ、現場の誰かを攻撃。<b>回避</b>（敵の攻撃値）に失敗すると被弾</li>
+      <li>3ラウンドで倒しきれないか、現場の全員が倒れると撤退。追撃戦は支援も戦う</li>
+      <li>情報を買わずに「???」の交戦に当たると待ち伏せ。敵が先に撃つ</li>
+      <li>人間性15以下のランナーが敵を倒すと、ときどき過剰な暴力でヒート＋4（テーザーは別）</li>
+    </ul>
+    <p class="dim">通常兵の基準値。依頼によっては交戦ごとに敵のDVが違い、情報を買うと見える。</p>
+    <dl class="ledger">${ranks}</dl>
+    <ul class="legend">
+      <li>${World.enemies.armored}：DV・攻撃＋2。2発で倒れる。テックか徹甲ライフルがあれば1発</li>
+      <li>${World.enemies.sniper}：DV・攻撃＋2。知覚DV18で見つけないと、先に3d6+5を撃ってくる</li>
+      <li>${World.enemies.hacker}：DV・攻撃＋2。ネット担当にICE攻撃（インターフェースDV18、失敗で2d6）。ネット担当がいないと増援</li>
+      <li>${World.enemies.swarm}：2体多い。DV・攻撃−1、ダメージは2d6</li>
+    </ul>
+
+    <h3>負傷と死亡セーブ</h3>
+    <ul>
+      <li>被弾のダメージから防具を引いた分だけHPが減る。防具を上回る傷を受けると防具が1減る</li>
+      <li>HPが0になると死亡セーブ。d10が<b>BODY＋補正</b>未満なら生き延びるが、その依頼ではもう動けない</li>
+      <li>死亡セーブの補正：メドテックの同行＋1、${ROLES.med.perk.name}＋2、人工心臓＋2（弐は＋3）</li>
+      <li>失敗すると死亡。救急サブスク「ラザロ」の加入者は回収される（回収費は報酬額の30%）</li>
+      <li>休息：全員がd6+2回復。メドテックがいれば医療の半分を足す。${CYBER.medkit.name}を入れた本人は＋5</li>
+    </ul>
+
+    <h3>続行と撤退</h3>
+    <ul>
+      <li>現場の誰かが重傷（HP半分未満）になったとき、死亡セーブを生き延びたとき、警報が鳴ったときに、続行か撤退かを選べる。1件の派遣で2回まで</li>
+      <li>撤退は報酬なしの失敗扱い。続行すると、済んだ判定は振り直さない</li>
+    </ul>
+  </div>
+  <div class="mact"><button class="primary" data-act="closehelp">閉じる</button></div>`;
 }
 
 /* ───────── 依頼盤 ───────── */
@@ -639,7 +717,7 @@ function renderModal() {
     const q = G.storyQueue[0];
     key = q === 'intro' ? 'intro' : 'queued-' + q;
     html = q === 'intro' ? stepIntro() : stepStory(q, 'closestory');
-  }
+  } else if (G && UI.help) { key = 'help'; html = stepHelp(); }
   if (key === UI.modalKey) return;
   UI.modalKey = key;
   stopLog();
@@ -940,6 +1018,8 @@ const H_ = {
     document.querySelectorAll('[data-act="sound"]').forEach((x) => { x.textContent = fresh.textContent; x.setAttribute('aria-pressed', fresh.getAttribute('aria-pressed')); });
   },
   hints() { prefs.hints = !prefs.hints; savePrefs(); applyHints(); render(); },
+  help() { UI.help = true; render(); },
+  closehelp() { UI.help = false; render(); },
   treat(b) { act(() => treat(getR(+b.dataset.r))); },
   repair(b) { act(() => repair(getR(+b.dataset.r))); },
   therapy(b) { act(() => therapy(getR(+b.dataset.r))); },
