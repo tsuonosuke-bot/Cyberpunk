@@ -433,18 +433,18 @@ const INTRO_JOBS = {
   },
 };
 
-/* メイン「ブラックボックス」 */
+/* メイン「ブラックボックス」の依頼。キーは依頼のID、campaign はこの依頼で終わる章のキー */
 const CAMPAIGN_JOBS = {
-  2: {
-    id: 'camp2', rank: 2, district: 'street', title: 'ブラックボックスをこじ開ける', client: 'self', target: null, campaign: 2,
+  camp2: {
+    id: 'camp2', rank: 2, district: 'street', title: 'ブラックボックスをこじ開ける', client: 'self', target: null, campaign: 'cipher',
     nights: 1, payout: 0, cred: 8, heat: 0, req: ['net', 'solo'],
     desc: '前任ハシバが残した箱の暗号を破る。ダイブ中、隠れ家を嗅ぎつけた連中が来るかもしれない。',
     routes: [
       { name: '隠れ家でダイブ', note: 'ネットランナーの腕がすべて', field: [_, _, C(2, '嗅ぎつけた追っ手'), _, _], net: [I(15, '外殻', 'door'), I(17, '第二層', 'trace'), H(I(17, '自壊プログラム', 'data')), _, I(17, '中枢', 'data')] },
     ],
   },
-  3: {
-    id: 'camp3', rank: 2, district: 'harbor', title: '前任の足跡：港湾局の乗船名簿', client: 'self', target: 'mitsukane', campaign: 3,
+  camp3: {
+    id: 'camp3', rank: 2, district: 'harbor', title: '前任の足跡：港湾局の乗船名簿', client: 'self', target: 'mitsukane', campaign: 'cargo',
     nights: 2, payout: 3000, cred: 8, heat: 10, req: ['net', 'tech'],
     desc: '箱の運送記録と照らし合わせるため、港湾局の記録庫から名簿の原本を持ち出す。持ち出した写しは別口で売れる。',
     routes: [
@@ -455,8 +455,8 @@ const CAMPAIGN_JOBS = {
       },
     ],
   },
-  4: {
-    id: 'camp4', rank: 3, district: 'upper', title: 'ハシバを消した者を追う', client: 'self', target: 'verde', campaign: 4,
+  camp4: {
+    id: 'camp4', rank: 3, district: 'upper', title: 'ハシバを消した者を追う', client: 'self', target: 'verde', campaign: 'coordinator',
     nights: 2, payout: 0, cred: 12, heat: 15, req: ['net', 'solo', 'driver', 'tech'],
     desc: 'ハシバが最後に会った「調整役」は、ヴェルデ製薬の上層階に住んでいる。',
     routes: [
@@ -467,8 +467,8 @@ const CAMPAIGN_JOBS = {
       },
     ],
   },
-  5: {
-    id: 'camp5', rank: 3, district: 'harbor', title: '最後の夜：箱を持って朝を迎える', client: 'self', target: 'hakurou', campaign: 5,
+  camp5: {
+    id: 'camp5', rank: 3, district: 'harbor', title: '最後の夜：箱を持って朝を迎える', client: 'self', target: 'hakurou', campaign: 'dawn',
     nights: 2, payout: 0, cred: 15, heat: 0, req: ['net', 'solo', 'driver'],
     desc: '3社が箱を取り返しに来る。夜明けまで逃げ切れば、箱の行き先は自分で決められる。',
     routes: [
@@ -481,48 +481,69 @@ const CAMPAIGN_JOBS = {
   },
 };
 
-const STORY = {
-  intro: {
-    title: '第1章　引き継ぎ',
+/* メインの章。保存データは章のキーを持つ。番号（no）は表示だけに使う。
+   next：次の章のキー（分岐させるときはここを選択で決める）
+   advance：満たすと次の章へ進む条件（メイン依頼のない章）
+   job / unlock：この章のメイン依頼と、依頼盤に出る条件
+   heatPerNight：この章のあいだ毎夜、全企業のヒートに足す値（冷めなくなる）
+   ending：この章のメイン依頼の成功で結末の選択に入る
+   条件の種類は engine.js の REQS（successes・rank・netInterface） */
+const CHAPTERS = {
+  handover: {
+    no: 1, title: '第1章　引き継ぎ',
     body: [
       '前任のフィクサー、ハシバが消えて三週間になる。',
       '湾岸の隠れ家と縄張り、40夜分の借金、それから開け方のわからない黒い箱が、新人のあなたに回ってきた。',
       'あなたは撃たない。ランナーを雇い、仕事を選び、夜の街へ送り出す。そして、人間のまま帰ってくるのを待つ。',
     ],
     goal: '依頼を3件成功させて、縄張りを回し始める。',
+    next: 'cipher',
+    advance: { successes: 3 },
   },
-  2: {
-    title: '第2章　鍵を探す',
+  cipher: {
+    no: 2, title: '第2章　鍵を探す',
     body: [
       '仕事が回り始めた。ハシバの箱は、普通の端末では暗号の入り口すら見えない。',
       '開けるには腕のいいネットランナーと、港湾の仕事を受けられるだけの評判が要る。',
     ],
     goal: '評判ランク2になり、インターフェース6以上のネットランナーを抱える。',
+    next: 'cargo',
+    job: 'camp2',
+    unlock: { rank: 2, netInterface: 6 },
   },
-  3: {
-    title: '第3章　積み荷',
+  cargo: {
+    no: 3, title: '第3章　積み荷',
     body: [
       '箱の中身の一部が読めた。運送記録だ。',
       'ただし、運ばれていたのは荷物ではなく人だった。ハシバは三社のあいだで、人を運んでいた。',
     ],
     goal: '港湾局の乗船名簿を手に入れる。',
+    next: 'coordinator',
+    job: 'camp3',
   },
-  4: {
-    title: '第4章　調整役',
+  coordinator: {
+    no: 4, title: '第4章　調整役',
     body: [
       '名簿の最後の行に、ハシバ自身の名前があった。行き先の欄は空白のままだ。',
       '名簿を持ち出したことは、もう知られている。3社すべてがこちらを嗅ぎ回り始めた。',
     ],
     goal: '評判ランク3になり、ハシバを消した「調整役」を問い詰める。（毎夜、全企業のヒート+3）',
+    next: 'dawn',
+    job: 'camp4',
+    unlock: { rank: 3 },
+    heatPerNight: 3,
   },
-  5: {
-    title: '第5章　夜明け',
+  dawn: {
+    no: 5, title: '第5章　夜明け',
     body: [
       '調整役は白状した。三社は社員を互いに「貸し借り」していた。戻ってこなかった者の記録が、あの箱に入っている。',
       'ハシバは公表しようとして、三社の合意で消された。',
       '箱を持って朝を迎えれば、その行き先は自分で決められる。',
     ],
     goal: '最後の依頼を成功させ、箱の行き先を決める。',
+    job: 'camp5',
+    heatPerNight: 3,
+    ending: true,
   },
 };
 

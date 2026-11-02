@@ -128,7 +128,7 @@ function hud() {
   const badge = { scout: G.scouts.length, board: G.board.length };
   const next = G.rank < 3 ? RANK_CRED[G.rank] : null;
   return `<header class="hud"><div class="hud-in">
-    <div class="brand"><span class="logo">FIXER'S CUT</span><span class="label">YOMIHAMA ・ 第${G.chapter}章</span></div>
+    <div class="brand"><span class="logo">FIXER'S CUT</span><span class="label">YOMIHAMA ・ 第${chapter().no}章</span></div>
     ${Comfort.soundButton()}${hintButton()}<dl class="hud-stats">
       <div><dt class="label">夜</dt><dd class="num">${G.night}</dd></div>
       <div class="${G.money < 0 ? 'neg' : ''}"><dt class="label">所持金</dt><dd class="num">${cr(G.money)}${G.negStreak ? ` <span class="chip p">赤字 ${G.negStreak}/3</span>` : ''}</dd></div>
@@ -155,20 +155,18 @@ function dock() {
 
 /* ───────── 隠れ家 ───────── */
 
+/* 章の進み具合：進む条件、まだ満たしていないメイン依頼の出現条件、メイン依頼の順に出す */
 function chapterProgress() {
-  const c = G.chapter;
-  const ck = (ok, t) => `<li class="${ok ? 'done' : ''}">${ok ? '済' : '未'}　${t}</li>`;
-  if (c === 1) return `<ul class="checks">${ck(G.successes >= 3, `依頼の成功 ${Math.min(3, G.successes)}/3`)}</ul>`;
-  if (c === 2) {
-    const net = G.runners.some((r) => r.role === 'net' && skill(r, 'インターフェース') >= 6);
-    return `<ul class="checks">${ck(G.rank >= 2, `評判ランク2（今は${G.rank}、評判 ${G.cred}/${RANK_CRED[1]} で顔役の紹介依頼が出る）`)}${ck(net, 'インターフェース6以上のネットランナー')}</ul>`;
-  }
-  if (c === 4 && G.rank < 3) return `<ul class="checks">${ck(false, `評判ランク3（評判 ${G.cred}/${RANK_CRED[2]} で紹介依頼が出る）`)}</ul>`;
-  return `<ul class="checks">${ck(false, '依頼盤のメイン依頼をこなす')}</ul>`;
+  const ch = chapter();
+  const ck = ({ ok, text }) => `<li class="${ok ? 'done' : ''}">${ok ? '済' : '未'}　${text}</li>`;
+  const items = ch.advance ? reqList(ch.advance)
+    : !reqsMet(ch.unlock) ? reqList(ch.unlock)
+    : [{ ok: false, text: '依頼盤のメイン依頼をこなす' }];
+  return `<ul class="checks">${items.map(ck).join('')}</ul>`;
 }
 
 function viewHome() {
-  const st = G.chapter === 1 ? STORY.intro : STORY[G.chapter];
+  const st = chapter();
   const up = upkeepItems();
   const missions = G.missions.length
     ? G.missions.map((m) => {
@@ -177,7 +175,7 @@ function viewHome() {
       return `<li><b>${esc(m.job.title)}</b><span>${m.job.routes[m.routeIdx].name} ・ ${names}</span><span class="num dim">${k}/${m.job.nights}夜目${m.result ? '' : '（今夜出発）'}</span>${m.result ? '' : `<button class="sm" data-act="recall" data-v="${m.uid}">取り消す</button>`}</li>`;
     }).join('')
     : '<li class="dim">今夜はまだ誰も出ていません。依頼盤から送り出せます。</li>';
-  const tut = G.chapter === 1 && G.night <= 3 ? `<section class="panel tut hint"><h3>はじめての夜</h3><ol>
+  const tut = G.chapter === 'handover' && G.night <= 3 ? `<section class="panel tut hint"><h3>はじめての夜</h3><ol>
       <li><b>スカウト</b>で候補を雇う。歩合は毎晩の支払いがないかわりに、分け前が本人のものになる</li>
       <li><b>依頼盤</b>で依頼を選び、ルートを決める。お金に余裕があれば情報を買って「???」を開ける</li>
       <li>ランナーを<b>現場・支援・ネット</b>の枠に入れて送り出す。必須ロールを満たすこと</li>
@@ -202,7 +200,7 @@ function viewHome() {
     </section>
     <section class="panel hint"><h3>ヒート</h3>
       <div class="heatlist">${CORPS.map((c) => `<div class="hrow ${G.heat[c] >= 80 ? 'hot' : ''}"><span>${CLIENTS[c].name}</span><div class="ht"><i style="width:${G.heat[c]}%"></i></div><b class="num">${G.heat[c]}</b></div>`).join('')}</div>
-      <p class="dim">企業の依頼を受けると、ほかの企業のヒートが上がります。標的にした企業はさらに上がります。100に達すると隠れ家が襲撃され、待機中のランナーで防衛します。${G.chapter >= 4 ? '<span class="pink">第4章からは毎夜+3。</span>' : '手を出さなかった企業は、毎夜1ずつ冷めます。'}</p>
+      <p class="dim">企業の依頼を受けると、ほかの企業のヒートが上がります。標的にした企業はさらに上がります。100に達すると隠れ家が襲撃され、待機中のランナーで防衛します。${chapter().heatPerNight ? `<span class="pink">${chapter().title.split('　')[0]}のあいだは、全企業が毎夜+${chapter().heatPerNight}。</span>` : '手を出さなかった企業は、毎夜1ずつ冷めます。'}</p>
     </section>
   </div>
   <section class="roster">
@@ -560,8 +558,8 @@ function stepSettle(s) {
 }
 
 function stepStory(n) {
-  const st = STORY[n] || INTERLUDES[n];
-  return `<div class="label">${STORY[n] ? 'MAIN ・ ブラックボックス' : 'INTERLUDE ・ ヨミハマ'}</div>
+  const st = CHAPTERS[n] || INTERLUDES[n];
+  return `<div class="label">${CHAPTERS[n] ? 'MAIN ・ ブラックボックス' : 'INTERLUDE ・ ヨミハマ'}</div>
     <h2>${st.title}</h2>
     ${st.body.map((p) => `<p class="story">${p}</p>`).join('')}
     ${st.goal ? `<p class="storygoal"><span class="label">目標</span> ${st.goal}</p>` : ''}
@@ -581,15 +579,16 @@ function stepReport(out) {
 }
 
 function stepEndingChoice() {
-  return `<div class="label">第5章 ・ 決着</div>
+  return `<div class="label">${chapter().title.split('　')[0]} ・ 決着</div>
     <h2>箱の行き先を決める</h2>
     <p class="story">夜が明けた。箱はまだ手の中にある。</p>
     <div class="bonus end">${Object.entries(ENDINGS).map(([k, e]) => `<button data-act="ending" data-v="${k}"><span class="label">${e.title}</span>${e.pick}</button>`).join('')}</div>`;
 }
 
 function stepIntro() {
-  const st = STORY.intro;
-  return `<div class="label">第1章</div><h2>${st.title.replace('第1章　', '')}</h2>
+  const st = CHAPTERS.handover;
+  const [no, name] = st.title.split('　');
+  return `<div class="label">${no}</div><h2>${name}</h2>
     ${st.body.map((p) => `<p class="story">${p}</p>`).join('')}
     <p class="storygoal"><span class="label">目標</span> ${st.goal}</p>
     <div class="mact"><button class="primary" data-act="closeintro">隠れ家に入る</button></div>`;
@@ -623,14 +622,16 @@ function renderModal() {
 }
 
 function stepCutin(key) {
-  if (key === 'intro') return cutin({ kicker: 'ヨミハマ ・ 第1章', title: '引き継ぎ', tone: 'blue' });
-  if (key === 'ending') return cutin({ kicker: '第5章', title: '夜明け', tone: 'blue' });
+  if (key === 'intro' || key === 'ending') {
+    const [no, name] = (key === 'intro' ? CHAPTERS.handover : chapter()).title.split('　');
+    return cutin({ kicker: key === 'intro' ? `ヨミハマ ・ ${no}` : no, title: name, tone: 'blue' });
+  }
   if (!UI.flow) return;
   const s = UI.flow.steps[UI.flow.step];
   const out = UI.flow.out;
   if (s.k === 'story') {
-    const [kick, title] = (STORY[s.n] || INTERLUDES[s.n]).title.split('　');
-    return cutin({ kicker: STORY[s.n] ? `MAIN ・ ${kick}` : kick, title, tone: STORY[s.n] ? 'pink' : 'blue' });
+    const [kick, title] = (CHAPTERS[s.n] || INTERLUDES[s.n]).title.split('　');
+    return cutin({ kicker: CHAPTERS[s.n] ? `MAIN ・ ${kick}` : kick, title, tone: CHAPTERS[s.n] ? 'pink' : 'blue' });
   }
   if (s.k === 'comm' && out.comms[s.i].raid) return cutin({ kicker: '警報', title: '襲撃', sub: esc(out.comms[s.i].title), tone: 'red' });
   if (s.k === 'settle') {
@@ -722,7 +723,7 @@ function renderTitle() {
     <ul class="decide"><li>誰と、どんな契約で組むか</li><li>どの仕事に、誰を出すか</li><li>出す前に、情報にいくら払うか</li><li>どこまで体を機械にさせるか</li></ul>
     <div class="ts-actions">
       ${sv && UI.ask === 'newgame' ? '<button class="danger big" data-act="new">前のデータを消して始める</button>' : `<button class="primary big" data-act="${sv ? 'asknew' : 'new'}">新しく始める</button>`}
-      ${sv ? `<button class="big" data-act="continue">続きから（夜${sv.night}・第${sv.chapter}章）</button>` : ''}
+      ${sv ? `<button class="big" data-act="continue">続きから（夜${sv.night}・第${CHAPTERS[sv.chapter].no}章）</button>` : ''}
     </div>
     <details class="howto"><summary>判定のしくみ</summary>
       <ul>

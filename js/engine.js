@@ -150,7 +150,7 @@ function newGame() {
   G = {
     v: 1, night: 1, money: 3000, negStreak: 0, cred: 0, rank: 1,
     heat: { mitsukane: 5, verde: 5, hakurou: 5 },
-    chapter: 1, successes: 0, flags: {}, runners: [], scouts: [], board: [], missions: [], memorial: [],
+    chapter: 'handover', chapterLog: ['handover'], successes: 0, flags: {}, runners: [], scouts: [], board: [], missions: [], memorial: [],
     loans: [{ id: 'debt', label: '前任ハシバの借金', perNight: 150, nightsLeft: 40, runnerId: null }],
     repeats: {}, vouchers: { cyber: 0, intel: 0 }, pending: [], archive: [], nextId: 1,
     storyQueue: ['intro'], awaitEnding: false, ended: null, lastReport: null,
@@ -169,8 +169,21 @@ function newGame() {
 function save() {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(G)); } catch (e) { /* 保存できない環境では無視 */ }
 }
+/* 章を番号で持っていた頃のセーブを、章のキーに読み替える */
+const CHAPTER_BY_NO = { 1: 'handover', 2: 'cipher', 3: 'cargo', 4: 'coordinator', 5: 'dawn' };
+function migrateChapters(g) {
+  if (typeof g.chapter === 'number') {
+    g.chapterLog = Object.keys(CHAPTER_BY_NO).filter((n) => +n <= g.chapter).map((n) => CHAPTER_BY_NO[n]);
+    g.chapter = CHAPTER_BY_NO[g.chapter] || 'handover';
+  }
+  g.chapterLog ||= [g.chapter];
+  for (const n of [2, 3, 4, 5]) if (g.flags['camp' + n]) { g.flags['done_' + CHAPTER_BY_NO[n]] = true; delete g.flags['camp' + n]; }
+  for (const j of [...g.board, ...g.missions.map((m) => m.job)]) if (typeof j.campaign === 'number') j.campaign = CHAPTER_BY_NO[j.campaign];
+}
+
 /* 古いセーブに足りない項目を補う */
 function migrate(g) {
+  migrateChapters(g);
   const story = { kagerou: 'x', yoru: 'm', haruka: 'f' };
   for (const r of [...g.runners, ...g.scouts]) {
     r.gear ||= {};
@@ -199,7 +212,7 @@ function clearSave() {
 function refreshScouts() {
   G.scouts = [];
   const hiredOrGone = (k) => G.runners.some((r) => r.story === k) || G.memorial.some((r) => r.story === k) || G.flags['story_' + k];
-  if (G.chapter >= 2 && !hiredOrGone('kagerou')) G.scouts.push(makeStory('kagerou'));
+  if (reached('cipher') && !hiredOrGone('kagerou')) G.scouts.push(makeStory('kagerou'));
   else if (G.night >= 3 && rnd() < 0.2) {
     const k = pick(['yoru', 'haruka', 'shigure', 'mikoto'].filter((x) => !hiredOrGone(x)));
     if (k) G.scouts.push(makeStory(k));
@@ -225,15 +238,29 @@ function addJob(tpl, special) {
   return j;
 }
 
+/* ───────── 章 ───────── */
+
+/* 章の条件の種類。label は隠れ家の進み具合に出す文 */
+const REQS = {
+  successes: { met: (n) => G.successes >= n, label: (n) => `依頼の成功 ${Math.min(n, G.successes)}/${n}` },
+  rank: { met: (n) => G.rank >= n, label: (n) => `評判ランク${n}（今は${G.rank}、評判 ${G.cred}/${RANK_CRED[n - 1]} で顔役の紹介依頼が出る）` },
+  netInterface: { met: (n) => G.runners.some((r) => r.role === 'net' && skill(r, 'インターフェース') >= n), label: (n) => `インターフェース${n}以上のネットランナー` },
+};
+const reqList = (reqs) => Object.entries(reqs || {}).map(([k, n]) => ({ ok: REQS[k].met(n), text: REQS[k].label(n) }));
+const reqsMet = (reqs) => reqList(reqs).every((x) => x.ok);
+const chapter = () => CHAPTERS[G.chapter];
+const reached = (key) => G.chapterLog.includes(key);
+
+function enterChapter(key, out) {
+  G.chapter = key;
+  if (!reached(key)) G.chapterLog.push(key);
+  out.story.push(key);
+}
+
 function campaignJob() {
-  const c = G.chapter;
-  if (G.flags['camp' + c] || !CAMPAIGN_JOBS[c]) return null;
-  if (c === 2) {
-    const ok = G.rank >= 2 && G.runners.some((r) => r.role === 'net' && skill(r, 'インターフェース') >= 6);
-    return ok ? CAMPAIGN_JOBS[2] : null;
-  }
-  if (c === 4 && G.rank < 3) return null;
-  return CAMPAIGN_JOBS[c];
+  const ch = chapter();
+  if (!ch.job || G.flags['done_' + G.chapter] || !reqsMet(ch.unlock)) return null;
+  return CAMPAIGN_JOBS[ch.job];
 }
 
 function refreshBoard(specialsOnly) {
@@ -780,11 +807,10 @@ function applyBonus(i) {
   save();
 }
 
-function campaignDone(n, out) {
-  G.flags['camp' + n] = true;
-  if (n === 5) { G.awaitEnding = true; return; }
-  G.chapter = n + 1;
-  out.story.push(n + 1);
+function campaignDone(key, out) {
+  G.flags['done_' + key] = true;
+  if (CHAPTERS[key].ending) { G.awaitEnding = true; return; }
+  enterChapter(CHAPTERS[key].next, out);
 }
 
 function settle(ms, out) {
@@ -847,7 +873,7 @@ function settle(ms, out) {
     G.successes++;
     if (job.intro) { G.rank++; s.notes.push(`評判ランク ${G.rank}「${RANK_NAME[G.rank]}」に上がった。上の依頼が回ってくる`); }
     if (job.campaign) campaignDone(job.campaign, out);
-    if (job.campaign !== 5) { G.pending.push(makeBonus(job)); s.bonus = true; }
+    if (!(job.campaign && CHAPTERS[job.campaign].ending)) { G.pending.push(makeBonus(job)); s.bonus = true; }
   } else {
     G.cred = Math.max(0, G.cred - 2); s.cred = -2;
     for (const m of members) { const r = getR(m.id); if (r && r.contract === 'exclusive') r.loyalty = clamp(r.loyalty - 3, 0, 100); }
@@ -873,7 +899,7 @@ const INTERLUDE_WHEN = {
   harbor: () => G.rank >= 2,
   watched: () => CORPS.some((c) => G.heat[c] >= 80),
   rain: () => G.night >= 12,
-  ghost: () => G.flags.camp2,
+  ghost: () => G.flags.done_cipher,
 };
 /* 一夜に一つまで。条件を満たした最初の未読の幕間を流す */
 function interlude(out) {
@@ -983,7 +1009,7 @@ function endNight() {
     if (ends) { out.settle.push(settle(ms, out)); done.push(ms); }
   }
   G.missions = G.missions.filter((m) => !done.includes(m));
-  if (G.chapter === 1 && G.successes >= 3) { G.chapter = 2; out.story.push(2); }
+  if (chapter().advance && reqsMet(chapter().advance)) enterChapter(chapter().next, out);
 
   // 2. 固定費
   out.upkeep = upkeepItems();
@@ -1042,9 +1068,10 @@ function endNight() {
 
   World.afterNight(out, tonight);
   // 4. ヒートと襲撃
-  // 手を出した企業は冷めない。第4章からは全社が毎夜+3
+  // 手を出した企業は冷めない。heatPerNight のある章では全社が毎夜上がる
+  const surge = chapter().heatPerNight || 0;
   for (const c of CORPS) {
-    if (G.chapter >= 4) G.heat[c] = clamp(G.heat[c] + 3, 0, 100);
+    if (surge) G.heat[c] = clamp(G.heat[c] + surge, 0, 100);
     else if (!out.touched[c]) G.heat[c] = clamp(G.heat[c] - 1, 0, 100);
   }
   for (const c of CORPS) if (G.heat[c] >= 100) raid(c, out);
