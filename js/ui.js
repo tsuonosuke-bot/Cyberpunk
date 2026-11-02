@@ -184,7 +184,7 @@ function viewHome() {
     </ol><p class="dim">所持金が3夜続けてマイナスになると廃業です。この説明は右上の「説明」ボタンで隠せます。</p></section>` : '';
   return `
   <section class="chapter">
-    <div class="label">MAIN ・ ブラックボックス</div>
+    <div class="label">MAIN ・ ブラックボックス${G.flags.ally ? ` ・ <span class="blue">${logo(G.flags.ally)}${CLIENTS[G.flags.ally].short}と協力中</span>` : ''}</div>
     <h2>${st.title}</h2>
     <p>${st.goal}</p>
     ${chapterProgress()}
@@ -557,13 +557,25 @@ function stepSettle(s) {
       : '<div class="mact"><button class="primary" data-act="next">次へ</button></div>'}`;
 }
 
-function stepStory(n) {
+function stepStory(n, act = 'next') {
   const st = CHAPTERS[n] || INTERLUDES[n];
+  const extra = st.allyBody && st.allyBody[G.flags.ally];
   return `<div class="label">${CHAPTERS[n] ? 'MAIN ・ ブラックボックス' : 'INTERLUDE ・ ヨミハマ'}</div>
     <h2>${st.title}</h2>
     ${st.body.map((p) => `<p class="story">${p}</p>`).join('')}
+    ${extra ? `<p class="story">${extra}</p>` : ''}
     ${st.goal ? `<p class="storygoal"><span class="label">目標</span> ${st.goal}</p>` : ''}
-    <div class="mact"><button class="primary" data-act="next">次へ</button></div>`;
+    <div class="mact"><button class="primary" data-act="${act}">次へ</button></div>`;
+}
+
+/* 章の分岐。選ぶまで夜は明けない */
+function stepChoice() {
+  const ch = CHAPTERS[G.awaitChoice], c = ch.choice;
+  const heat = (o) => CORPS.map((k) => `${CLIENTS[k].short} ${k === o.ally ? ALLY_HEAT.ally : '+' + ALLY_HEAT.others}`).join('　');
+  return `<div class="label">${ch.title.split('　')[0]} ・ 分岐</div>
+    <h2>${c.title}</h2>
+    ${c.body.map((p) => `<p class="story">${p}</p>`).join('')}
+    <div class="bonus branch">${c.options.map((o, i) => `<button data-act="branch" data-v="${i}"><span class="label">${logo(o.ally)}${CLIENTS[o.ally].name}と組む</span>${o.text}<small class="num pink">ヒート ${heat(o)}</small></button>`).join('')}</div>`;
 }
 
 function stepReport(out) {
@@ -605,8 +617,13 @@ function renderModal() {
     if (s.k === 'report') html = stepReport(UI.flow.out);
   } else if (G && G.personalNotices && G.personalNotices.length) {
     key='personal-'+G.personalNotices[0]; html=World.storyHtml(G.personalNotices[0]);
-  } else if (G && G.awaitEnding && !G.ended) { key = 'ending'; html = stepEndingChoice(); }
-  else if (G && G.storyQueue && G.storyQueue.includes('intro')) { key = 'intro'; html = stepIntro(); }
+  } else if (G && G.awaitChoice) { key = 'choice-' + G.awaitChoice; html = stepChoice(); }
+  else if (G && G.awaitEnding && !G.ended) { key = 'ending'; html = stepEndingChoice(); }
+  else if (G && G.storyQueue && G.storyQueue.length) {
+    const q = G.storyQueue[0];
+    key = q === 'intro' ? 'intro' : 'queued-' + q;
+    html = q === 'intro' ? stepIntro() : stepStory(q, 'closestory');
+  }
   if (key === UI.modalKey) return;
   UI.modalKey = key;
   stopLog();
@@ -625,6 +642,11 @@ function stepCutin(key) {
   if (key === 'intro' || key === 'ending') {
     const [no, name] = (key === 'intro' ? CHAPTERS.handover : chapter()).title.split('　');
     return cutin({ kicker: key === 'intro' ? `ヨミハマ ・ ${no}` : no, title: name, tone: 'blue' });
+  }
+  if (key.startsWith('choice-')) return cutin({ kicker: CHAPTERS[key.slice(7)].title.split('　')[0], title: '分岐', tone: 'blue' });
+  if (key.startsWith('queued-')) {
+    const [kick, title] = CHAPTERS[key.slice(7)].title.split('　');
+    return cutin({ kicker: `MAIN ・ ${kick}`, title, tone: 'pink' });
   }
   if (!UI.flow) return;
   const s = UI.flow.steps[UI.flow.step];
@@ -799,6 +821,8 @@ const H_ = {
   continue() { G = loadSave(); UI.tab = 'home'; if(G && G.nightInProgress) H_.night(); else render(); },
   restart() { G = null; clearSave(); UI.ask = null; UI.flow = null; render(); },
   closeintro() { G.storyQueue = G.storyQueue.filter((x) => x !== 'intro'); save(); render(); },
+  closestory() { G.storyQueue.shift(); save(); render(); },
+  branch(b) { act(() => chooseBranch(+b.dataset.v)); },
   tab(b) { UI.tab = b.dataset.v; UI.ask = null; render(); window.scrollTo(0, 0); },
   job(b) {
     UI.job = +b.dataset.v; UI.route = 0; render();
@@ -873,6 +897,7 @@ const H_ = {
   night() {
     stopLog();
     const out = endNight();
+    if (!out) { render(); return; }
     UI.flow = { id: Date.now(), out, step: 0, steps: buildSteps(out) };
     UI.team = {}; UI.est = { key: '', val: null }; UI.ask = null;
     render();

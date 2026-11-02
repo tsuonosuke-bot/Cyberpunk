@@ -82,7 +82,8 @@ const World = (() => {
     if (hot) extra.push(`${CLIENTS[hot].short}の警備部が、新人フィクサーの名簿を作っているらしい。`);
     for (const [k, rv] of Object.entries(G.rivals)) if (rv.stolen.length) extra.push(`${rivals[k].name}のところに移った${rv.stolen[rv.stolen.length - 1].name}は、あまり眠れていないらしい。`);
     if (G.rank >= 2) extra.push('港のゴンドウが、あんたの名前を船乗りたちに回したそうだ。');
-    if (reached('cargo')) extra.push('港湾局の記録係が、急に長い休暇を取ったらしい。');
+    if (G.flags.ally) extra.push('港湾局の記録係が、急に長い休暇を取ったらしい。');
+    if (G.flags.ally) extra.push(`${CLIENTS[G.flags.ally].short}の人間が、あんたの隠れ家の前で煙草を吸っていたそうだ。見張りか、護衛か。`);
     return extra.length && rnd() < .5 ? pick(extra) : pick(rumors);
   }
   const conditionPool = [

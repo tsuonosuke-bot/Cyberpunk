@@ -13,45 +13,67 @@ function game() {
 }
 // Settles a won mission for the given board job without rolling dice.
 const win=`(job)=>{const out={story:[],touched:{}};const ms={job,routeIdx:0,result:{success:true,reason:'',members:[],heat:{},lazarus:[],rewardMult:1,log:[]}};G.board=G.board.filter(j=>j!==job);return {s:settle(ms,out),out};}`;
+const winMain=`()=>{refreshBoard(true);const j=G.board.find(j=>j.campaign===G.chapter);if(!j)throw new Error('no main job in '+G.chapter);return (${win})(j);}`;
+const ALLIES=['mitsukane','verde','hakurou'];
 
-test('chapter table is consistent: every link, job and condition resolves, and the chain ends',()=>{
+test('chapter table is consistent: links, branches, jobs and conditions all resolve',()=>{
   const {run}=game();
-  assert.equal(run(`Object.entries(CHAPTERS).every(([k,c])=>(c.ending||CHAPTERS[c.next])&&(!c.job||CAMPAIGN_JOBS[c.job].campaign===k)&&Object.keys({...c.unlock,...c.advance}).every(r=>REQS[r]))`),true);
-  assert.equal(run(`let k='handover',n=0;while(!CHAPTERS[k].ending&&n<20){k=CHAPTERS[k].next;n++;} CHAPTERS[k].ending===true`),true);
+  assert.equal(run(`Object.entries(CHAPTERS).every(([k,c])=>{
+    const nexts=c.ending?[]:c.choice?c.choice.options.map(o=>o.next):typeof c.next==='string'?[c.next]:Object.values(c.next.ally);
+    return (c.ending||nexts.length)&&nexts.every(n=>CHAPTERS[n])&&(!c.job||CAMPAIGN_JOBS[c.job].campaign===k)&&Object.keys({...c.unlock,...c.advance}).every(r=>REQS[r]);
+  })`),true);
+  assert.equal(run(`Object.values(CAMPAIGN_JOBS).every(j=>CHAPTERS[j.campaign]&&CHAPTERS[j.campaign].job===j.id)`),true);
+  assert.equal(run(`CHAPTERS.cipher.choice.options.map(o=>o.ally).sort().join()`),[...ALLIES].sort().join());
 });
 
-test('campaign runs handover → cipher → cargo → coordinator → dawn → ending choice',()=>{
+for (const [i, ally] of ALLIES.entries()) test(`branch ${ally}: handover → cipher → choice → cargo → drowned → coordinator → dawn → ending`,()=>{
   const {run}=game();
   run(`G.successes=3; var out=endNight();`);
-  assert.equal(run('G.chapter==="cipher" && out.story.includes("cipher") && G.chapterLog.join()==="handover,cipher"'),true);
-  assert.equal(run('refreshBoard(); G.board.some(j=>j.campaign)'),false);
-  run(`G.rank=2; const n=makeRunner('net'); n.skills['インターフェース']=6; G.runners.push(n); refreshBoard();`);
-  run(`var r=(${win})(G.board.find(j=>j.campaign==='cipher'));`);
-  assert.equal(run('G.chapter==="cargo" && r.out.story[0]==="cargo" && r.s.bonus && G.flags.done_cipher'),true);
-  run(`refreshBoard(); r=(${win})(G.board.find(j=>j.campaign==='cargo'));`);
-  assert.equal(run('G.chapter'),'coordinator');
-  assert.equal(run('refreshBoard(); G.board.some(j=>j.campaign)'),false);
-  run(`G.rank=3; refreshBoard(); r=(${win})(G.board.find(j=>j.campaign==='coordinator'));`);
+  assert.equal(run('G.chapter'),'cipher');
+  run(`G.rank=2; const n=makeRunner('net'); n.skills['インターフェース']=6; G.runners.push(n); var r=(${winMain})();`);
+  assert.equal(run('G.awaitChoice==="cipher" && G.chapter==="cipher" && r.s.bonus'),true);
+  assert.equal(run('endNight()'),null); // the night cannot end until a branch is chosen
+  run(`G.heat={mitsukane:40,verde:40,hakurou:40}; chooseBranch(${i});`);
+  assert.equal(run('G.chapter'),`cargo_${ally}`);
+  assert.equal(run(`G.flags.ally==="${ally}" && G.heat.${ally}===10 && Object.entries(G.heat).every(([k,v])=>k==="${ally}"||v===50)`),true);
+  assert.equal(run(`G.storyQueue.includes("cargo_${ally}") && G.board.some(j=>j.campaign==="cargo_${ally}")`),true);
+  run(`(${winMain})();`);
+  assert.equal(run('G.chapter'),'drowned');
+  assert.equal(run('refreshBoard(true); G.board.some(j=>j.campaign==="drowned")'),false); // needs two nights of digging
+  run('G.night+=2;');
+  run(`r=(${winMain})();`);
+  assert.equal(run('G.chapter'),`coordinator_${ally}`);
+  assert.equal(run('refreshBoard(true); G.board.some(j=>j.campaign)'),false); // rank 3 first
+  run(`G.rank=3; (${winMain})();`);
   assert.equal(run('G.chapter'),'dawn');
-  run(`refreshBoard(); r=(${win})(G.board.find(j=>j.campaign==='dawn'));`);
-  assert.equal(run('G.awaitEnding===true && !r.s.bonus && G.chapter==="dawn"'),true);
+  run(`r=(${winMain})();`);
+  assert.equal(run('G.awaitEnding===true && !r.s.bonus'),true);
+  assert.equal(run('G.chapterLog.join()'),`handover,cipher,cargo_${ally},drowned,coordinator_${ally},dawn`);
 });
 
 test('heatPerNight chapters keep every corporation heating; others cool when untouched',()=>{
   const {run}=game();
   run(`G.missions=[];G.board=[];G.heat={mitsukane:20,verde:20,hakurou:20};endNight();`);
   assert.equal(run('G.heat.verde'),19);
-  run(`G.chapter='coordinator';G.chapterLog.push('cipher','cargo','coordinator');G.missions=[];G.board=[];G.heat={mitsukane:20,verde:20,hakurou:20};endNight();`);
+  run(`G.chapter='coordinator_verde';G.flags.ally='verde';G.missions=[];G.board=[];G.heat={mitsukane:20,verde:20,hakurou:20};endNight();`);
   assert.equal(run('G.heat.verde'),23);
 });
 
-test('saves with numeric chapters load as chapter keys with history, flags and campaign jobs converted',()=>{
-  const {run,storage}=game();
-  run(`G.chapter=3; delete G.chapterLog; G.flags.camp2=true; G.board.push({...clone(CAMPAIGN_JOBS.camp3),uid:777,tpl:'camp3',campaign:3}); save();`);
+test('saves with numeric chapters continue on the Hakurou branch, which keeps the original jobs',()=>{
+  const {run}=game();
+  run(`G.chapter=3; delete G.chapterLog; delete G.chapterSince; G.flags.camp2=true; G.board.push({...clone(CAMPAIGN_JOBS.camp3),uid:777,tpl:'camp3',campaign:3}); save();`);
   run('G=null; G=loadSave();');
-  assert.equal(run('G.chapter'),'cargo');
-  assert.equal(run('G.chapterLog.join()'),'handover,cipher,cargo');
-  assert.equal(run('G.flags.done_cipher===true && G.flags.camp2===undefined'),true);
-  assert.equal(run('G.board.find(j=>j.uid===777).campaign'),'cargo');
-  assert.equal(run('reached("cipher") && !reached("coordinator")'),true);
+  assert.equal(run('G.chapter'),'cargo_hakurou');
+  assert.equal(run('G.chapterLog.join()'),'handover,cipher,cargo_hakurou');
+  assert.equal(run('G.flags.done_cipher===true && G.flags.camp2===undefined && G.flags.ally==="hakurou"'),true);
+  assert.equal(run('G.board.find(j=>j.uid===777).campaign'),'cargo_hakurou');
+  assert.equal(run('typeof G.chapterSince==="number" && G.awaitChoice===null'),true);
+});
+
+test('saves from before branching (cargo / coordinator keys) are renamed onto the Hakurou branch',()=>{
+  const {run}=game();
+  run(`G.chapter='coordinator'; G.chapterLog=['handover','cipher','cargo','coordinator']; G.flags.done_cipher=true; G.flags.done_cargo=true; save(); G=null; G=loadSave();`);
+  assert.equal(run('G.chapter'),'coordinator_hakurou');
+  assert.equal(run('G.chapterLog.join()'),'handover,cipher,cargo_hakurou,coordinator_hakurou');
+  assert.equal(run('G.flags.done_cargo_hakurou===true && G.flags.done_cargo===undefined && G.flags.ally==="hakurou"'),true);
 });

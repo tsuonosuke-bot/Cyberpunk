@@ -444,7 +444,7 @@ const CAMPAIGN_JOBS = {
     ],
   },
   camp3: {
-    id: 'camp3', rank: 2, district: 'harbor', title: '前任の足跡：港湾局の乗船名簿', client: 'self', target: 'mitsukane', campaign: 'cargo',
+    id: 'camp3', rank: 2, district: 'harbor', title: '前任の足跡：港湾局の乗船名簿', client: 'self', target: 'mitsukane', campaign: 'cargo_hakurou',
     nights: 2, payout: 3000, cred: 8, heat: 10, req: ['net', 'tech'],
     desc: '箱の運送記録と照らし合わせるため、港湾局の記録庫から名簿の原本を持ち出す。持ち出した写しは別口で売れる。',
     routes: [
@@ -456,7 +456,7 @@ const CAMPAIGN_JOBS = {
     ],
   },
   camp4: {
-    id: 'camp4', rank: 3, district: 'upper', title: 'ハシバを消した者を追う', client: 'self', target: 'verde', campaign: 'coordinator',
+    id: 'camp4', rank: 3, district: 'upper', title: 'ハシバを消した者を追う', client: 'self', target: 'verde', campaign: 'coordinator_hakurou',
     nights: 2, payout: 0, cred: 12, heat: 15, req: ['net', 'solo', 'driver', 'tech'],
     desc: 'ハシバが最後に会った「調整役」は、ヴェルデ製薬の上層階に住んでいる。',
     routes: [
@@ -464,6 +464,57 @@ const CAMPAIGN_JOBS = {
         name: '調整役の自宅', note: '企業区画上層の居住棟',
         field: [S(17, '居住棟'), C(3, '私兵'), _, H(T(17, '対人センサー')), R('非常階段'), GT(17, '居室'), H(C(4, '戦闘用義体兵')), K(17, '調整役を問い詰める'), O('証言'), E(17, '逃走')],
         net: [I(17, 'カメラ網', 'cam'), _, _, _, _, I(17, '居室の施錠', 'door'), _, _, H(I(19, '警報系', 'alarm')), _],
+      },
+    ],
+  },
+  camp3_mitsukane: {
+    id: 'camp3_mitsukane', rank: 2, district: 'harbor', title: '前任の足跡：ヴェルデの検疫倉庫から名簿を奪う', client: 'self', target: 'verde', campaign: 'cargo_mitsukane',
+    nights: 1, payout: 3000, cred: 8, heat: 10, req: ['solo', 'driver'],
+    desc: 'ミツカネの警備部が、港の夜警を一晩だけ外してくれる。名簿の原本は、ヴェルデの検疫倉庫に「預けて」あるらしい。',
+    routes: [
+      { name: '検疫倉庫', note: '正面から押し入る', field: [S(15, '検疫倉庫'), C(2, 'ヴェルデの検疫警備', 'armored', 17), H(T(15, '消毒ガスの噴霧口')), O('名簿の原本'), E(15, '港から離脱')], net: N5() },
+      { name: '検疫船', note: '沖に停めた検疫船に横づけする', field: [D(15, '検疫船に横づけ'), H(C(2, '船員に化けた私兵', 'swarm', 19)), _, O('名簿の原本'), E(17, '沖へ逃走')], net: N5() },
+    ],
+  },
+  camp3_verde: {
+    id: 'camp3_verde', rank: 2, district: 'upper', title: '前任の足跡：ハクロウの医療回線から転送記録を抜く', client: 'self', target: 'hakurou', campaign: 'cargo_verde',
+    nights: 1, payout: 3000, cred: 8, heat: 10, req: ['net', 'med'],
+    desc: 'ヴェルデの治験管理官が、名簿と照合できる治験記録を渡すという。条件は、ハクロウの医療回線に残る「転送記録」を抜いてくること。',
+    routes: [
+      { name: '医療回線', note: '治験の往診を装って端末に触れる', field: [M(15, '治験の往診を装う'), _, H(C(2, '回線警備', 'hacker', 19)), S(15, '転送室へ'), O('名簿の写し')], net: [I(15, '医療回線', 'trace'), _, I(15, '転送記録', 'data'), _, _] },
+      { name: '保管庫', note: 'ハクロウの記録保管庫に忍び込む', field: [S(15, 'ハクロウの保管庫'), H(T(15, '赤外線網')), C(2, '保管庫の警備', 'sniper', 17), O('名簿の写し'), E(15, '撤収')], net: [_, I(15, 'カメラ網', 'cam'), _, I(15, '転送記録', 'data'), _] },
+    ],
+  },
+  camp_names: {
+    id: 'camp_names', rank: 2, district: 'harbor', title: '名簿の生き残りを水没区から連れ出す', client: 'self', target: null, campaign: 'drowned',
+    nights: 1, payout: 2500, cred: 8, heat: 0, req: ['solo', 'med'],
+    desc: '名簿に載った男が、水没区の集落で生きている。三社の回収屋も、同じ男を探している。顔役が、連れ出せば礼をすると言った。',
+    routes: [
+      { name: '高架下', note: '浸水した高架下を車で抜ける', field: [D(15, '浸水した高架下'), S(15, '水没区の集落'), H(C(2, '回収屋', 'swarm', 18)), M(15, '生き残りの手当て'), O('生き残りを保護')], net: N5() },
+      { name: '浮き桟橋', note: '桟橋づたいに歩いて近づく', field: [S(15, '浮き桟橋'), H(T(15, '腐った足場')), C(2, '回収屋の見張り', 'sniper', 20), M(15, '生き残りの手当て'), O('生き残りを保護')], net: N5() },
+    ],
+  },
+  camp4_mitsukane: {
+    id: 'camp4_mitsukane', rank: 3, district: 'harbor', title: '調整役を海上基地に追う', client: 'self', target: 'hakurou', campaign: 'coordinator_mitsukane',
+    nights: 2, payout: 0, cred: 12, heat: 15, req: ['net', 'solo', 'driver', 'tech'],
+    desc: '調整役は、ハクロウ通信の海上中継基地に隠れている。ミツカネの警備艇が、基地の手前まで送ってくれる。',
+    routes: [
+      {
+        name: '海上基地', note: '警備艇から桟橋に乗り移る',
+        field: [D(17, 'ミツカネの警備艇で接近'), C(3, '基地の警備'), _, H(T(17, '水中センサー')), R('機械室'), GT(17, '居住区画'), H(C(4, '戦闘用義体兵')), K(17, '調整役を問い詰める'), O('証言'), E(17, '海へ逃走')],
+        net: [I(17, 'カメラ網', 'cam'), _, _, _, _, I(17, '居住区の施錠', 'door'), _, _, H(I(19, '警報系', 'alarm')), _],
+      },
+    ],
+  },
+  camp4_verde: {
+    id: 'camp4_verde', rank: 3, district: 'upper', title: '調整役を役員病棟に追う', client: 'self', target: 'mitsukane', campaign: 'coordinator_verde',
+    nights: 2, payout: 0, cred: 12, heat: 15, req: ['net', 'solo', 'driver', 'med'],
+    desc: '調整役は、ミツカネ重工の役員病棟に偽名で入院している。ヴェルデの主治医の名義で、病棟に入れる。',
+    routes: [
+      {
+        name: '役員病棟', note: '主治医の回診に紛れる',
+        field: [M(17, '主治医を装う'), C(3, '病棟の警備', 'sniper'), _, H(T(17, '生体認証床')), R('仮眠室'), S(19, '特別室へ忍び込む'), H(C(4, '戦闘用義体兵')), K(17, '調整役を問い詰める'), O('証言'), E(17, '救急車で逃走')],
+        net: [I(17, 'カルテ系', 'trace'), _, I(17, 'カメラ網', 'cam'), _, _, I(17, '病棟のカメラ網', 'cam'), _, _, H(I(19, '警報系', 'alarm')), _],
       },
     ],
   },
@@ -482,12 +533,14 @@ const CAMPAIGN_JOBS = {
 };
 
 /* メインの章。保存データは章のキーを持つ。番号（no）は表示だけに使う。
-   next：次の章のキー（分岐させるときはここを選択で決める）
+   next：次の章のキー。{ ally: { 社: キー } } なら、手を組んだ社で決まる
+   choice：メイン依頼の成功後に出す分岐。選んだ option の next へ進み、ally を手を組んだ社として記録する
+   ally：この章が属する分岐（手を組んだ社）。allyBody：手を組んだ社ごとに本文の最後へ足す段落
    advance：満たすと次の章へ進む条件（メイン依頼のない章）
    job / unlock：この章のメイン依頼と、依頼盤に出る条件
    heatPerNight：この章のあいだ毎夜、全企業のヒートに足す値（冷めなくなる）
    ending：この章のメイン依頼の成功で結末の選択に入る
-   条件の種類は engine.js の REQS（successes・rank・netInterface） */
+   条件の種類は engine.js の REQS（successes・rank・netInterface・chapterNights） */
 const CHAPTERS = {
   handover: {
     no: 1, title: '第1章　引き継ぎ',
@@ -507,25 +560,103 @@ const CHAPTERS = {
       '開けるには腕のいいネットランナーと、港湾の仕事を受けられるだけの評判が要る。',
     ],
     goal: '評判ランク2になり、インターフェース6以上のネットランナーを抱える。',
-    next: 'cargo',
     job: 'camp2',
     unlock: { rank: 2, netInterface: 6 },
+    choice: {
+      title: '誰の手を借りるか',
+      body: [
+        '箱の運送記録には、三社の社名が並んでいた。運ばれていた人の行き先を追うには、港湾局の乗船名簿が要る。',
+        '名簿に近づくには、どこかの社の内側に手を借りるしかない。手を組んだ社は少しのあいだ目をつぶってくれるが、残りの二社は、こちらを敵と見なすだろう。',
+      ],
+      options: [
+        { ally: 'mitsukane', next: 'cargo_mitsukane', text: '物流部長ナカガワは、港の夜警を外せる。腕の立つソロと、逃げ足のあるドライバーが要る仕事になる。' },
+        { ally: 'verde', next: 'cargo_verde', text: '治験管理官は、名簿の人々の「その後」を知っている。ネットランナーとメドテックの仕事になる。' },
+        { ally: 'hakurou', next: 'cargo_hakurou', text: '回線保守主任は、港湾局の電子目録に通じる回線を貸せる。ネットランナーとテックの仕事になる。' },
+      ],
+    },
   },
-  cargo: {
-    no: 3, title: '第3章　積み荷',
+  cargo_mitsukane: {
+    no: 3, title: '第3章　積み荷・鋼の手', ally: 'mitsukane',
     body: [
       '箱の中身の一部が読めた。運送記録だ。',
       'ただし、運ばれていたのは荷物ではなく人だった。ハシバは三社のあいだで、人を運んでいた。',
+      'ミツカネ重工の物流部長ナカガワは、箱の記録に値段をつけなかった。「名簿の原本は、ヴェルデが検疫倉庫に隠している。取りに行くなら、港の夜警はこちらで外そう」',
     ],
     goal: '港湾局の乗船名簿を手に入れる。',
-    next: 'coordinator',
+    next: 'drowned',
+    job: 'camp3_mitsukane',
+  },
+  cargo_verde: {
+    no: 3, title: '第3章　積み荷・緑の検疫', ally: 'verde',
+    body: [
+      '箱の中身の一部が読めた。運送記録だ。',
+      'ただし、運ばれていたのは荷物ではなく人だった。ハシバは三社のあいだで、人を運んでいた。',
+      'ヴェルデ製薬の治験管理官は、名簿に載った人々の「その後」を知っていると言った。「照合したいなら、ハクロウの医療回線に残る転送記録が要る」',
+    ],
+    goal: '港湾局の乗船名簿を手に入れる。',
+    next: 'drowned',
+    job: 'camp3_verde',
+  },
+  cargo_hakurou: {
+    no: 3, title: '第3章　積み荷・白狼の回線', ally: 'hakurou',
+    body: [
+      '箱の中身の一部が読めた。運送記録だ。',
+      'ただし、運ばれていたのは荷物ではなく人だった。ハシバは三社のあいだで、人を運んでいた。',
+      'ハクロウ通信の回線保守主任は、港湾局の電子目録に通じる保守回線を貸すと言った。見返りは、名簿に載ったミツカネの物流記録の写しだ。',
+    ],
+    goal: '港湾局の乗船名簿を手に入れる。',
+    next: 'drowned',
     job: 'camp3',
   },
-  coordinator: {
-    no: 4, title: '第4章　調整役',
+  drowned: {
+    no: 4, title: '第4章　沈む名前',
+    body: [
+      '名簿に載っていた名前を、ひとつずつ洗った。ほとんどは死亡記録か、記録そのものが消えていた。',
+      'ただ一人、水没区の集落で生きている男がいた。三社のあいだを五回「貸し出され」、そのたびに記憶を消されたという。',
+      '回収屋より先に男を見つければ、名簿が何のための記録だったのか、本人の口から聞ける。',
+    ],
+    goal: '手がかりを洗い、名簿の生き残りを回収屋より先に水没区から連れ出す。',
+    next: { ally: { mitsukane: 'coordinator_mitsukane', verde: 'coordinator_verde', hakurou: 'coordinator_hakurou' } },
+    job: 'camp_names',
+    unlock: { chapterNights: 2 },
+    allyBody: {
+      mitsukane: '男の左腕には、ミツカネの資産番号が刻印されていた。ナカガワは、その番号を見ても顔色を変えなかった。',
+      verde: '男の首筋には、ヴェルデの治験用ポートが残っていた。管理官は「回収して記録を取りたい」とだけ言った。',
+      hakurou: '男の網膜には、ハクロウの通信ログが焼きついていた。保守主任は、その中身を見せてくれと何度も頼んできた。',
+    },
+  },
+  coordinator_mitsukane: {
+    no: 5, title: '第5章　調整役・海上基地', ally: 'mitsukane',
     body: [
       '名簿の最後の行に、ハシバ自身の名前があった。行き先の欄は空白のままだ。',
       '名簿を持ち出したことは、もう知られている。3社すべてがこちらを嗅ぎ回り始めた。',
+      '男の証言で、調整役の名前がわかった。ミツカネの警備部は、その居場所を三日で突き止めた。ハクロウの海上中継基地だ。「話を聞いたら、あとはこちらで処理する」とナカガワは言った。',
+    ],
+    goal: '評判ランク3になり、ハシバを消した「調整役」を問い詰める。（毎夜、全企業のヒート+3）',
+    next: 'dawn',
+    job: 'camp4_mitsukane',
+    unlock: { rank: 3 },
+    heatPerNight: 3,
+  },
+  coordinator_verde: {
+    no: 5, title: '第5章　調整役・役員病棟', ally: 'verde',
+    body: [
+      '名簿の最後の行に、ハシバ自身の名前があった。行き先の欄は空白のままだ。',
+      '名簿を持ち出したことは、もう知られている。3社すべてがこちらを嗅ぎ回り始めた。',
+      '男の証言で、調整役の名前がわかった。ヴェルデの治験管理官によれば、調整役は偽名でミツカネの役員病棟に入院している。主治医の名義なら、ヴェルデが用意できるという。',
+    ],
+    goal: '評判ランク3になり、ハシバを消した「調整役」を問い詰める。（毎夜、全企業のヒート+3）',
+    next: 'dawn',
+    job: 'camp4_verde',
+    unlock: { rank: 3 },
+    heatPerNight: 3,
+  },
+  coordinator_hakurou: {
+    no: 5, title: '第5章　調整役・上層の居室', ally: 'hakurou',
+    body: [
+      '名簿の最後の行に、ハシバ自身の名前があった。行き先の欄は空白のままだ。',
+      '名簿を持ち出したことは、もう知られている。3社すべてがこちらを嗅ぎ回り始めた。',
+      '男の証言で、調整役の名前がわかった。ハクロウの通信記録によれば、調整役はヴェルデ製薬の上層階に住んでいる。ハシバが最後に会った相手でもある。',
     ],
     goal: '評判ランク3になり、ハシバを消した「調整役」を問い詰める。（毎夜、全企業のヒート+3）',
     next: 'dawn',
@@ -534,7 +665,7 @@ const CHAPTERS = {
     heatPerNight: 3,
   },
   dawn: {
-    no: 5, title: '第5章　夜明け',
+    no: 6, title: '第6章　夜明け',
     body: [
       '調整役は白状した。三社は社員を互いに「貸し借り」していた。戻ってこなかった者の記録が、あの箱に入っている。',
       'ハシバは公表しようとして、三社の合意で消された。',
@@ -544,6 +675,11 @@ const CHAPTERS = {
     job: 'camp5',
     heatPerNight: 3,
     ending: true,
+    allyBody: {
+      mitsukane: 'ミツカネの警備艇は、約束の桟橋に来なかった。ナカガワも、箱の中身を知った以上は取り返す側に回った。',
+      verde: 'ヴェルデの治験管理官からの連絡は、その夜を最後に途絶えた。病棟の主治医の名義は、もう使えない。',
+      hakurou: 'ハクロウの保守回線は、夜のうちに遮断された。保守主任の番号は、もう誰にもつながらない。',
+    },
   },
 };
 

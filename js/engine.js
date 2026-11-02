@@ -150,7 +150,7 @@ function newGame() {
   G = {
     v: 1, night: 1, money: 3000, negStreak: 0, cred: 0, rank: 1,
     heat: { mitsukane: 5, verde: 5, hakurou: 5 },
-    chapter: 'handover', chapterLog: ['handover'], successes: 0, flags: {}, runners: [], scouts: [], board: [], missions: [], memorial: [],
+    chapter: 'handover', chapterLog: ['handover'], chapterSince: 1, awaitChoice: null, successes: 0, flags: {}, runners: [], scouts: [], board: [], missions: [], memorial: [],
     loans: [{ id: 'debt', label: '前任ハシバの借金', perNight: 150, nightsLeft: 40, runnerId: null }],
     repeats: {}, vouchers: { cyber: 0, intel: 0 }, pending: [], archive: [], nextId: 1,
     storyQueue: ['intro'], awaitEnding: false, ended: null, lastReport: null,
@@ -169,16 +169,28 @@ function newGame() {
 function save() {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(G)); } catch (e) { /* 保存できない環境では無視 */ }
 }
-/* 章を番号で持っていた頃のセーブを、章のキーに読み替える */
-const CHAPTER_BY_NO = { 1: 'handover', 2: 'cipher', 3: 'cargo', 4: 'coordinator', 5: 'dawn' };
+/* 古いセーブの章を今の章のキーに読み替える。
+   番号で持っていた頃（1〜5）と、分岐を入れる前のキー（cargo・coordinator）は、
+   元の筋書きと同じ依頼が並ぶハクロウの分岐として続ける */
+const CHAPTER_BY_NO = { 1: 'handover', 2: 'cipher', 3: 'cargo_hakurou', 4: 'coordinator_hakurou', 5: 'dawn' };
+const CHAPTER_RENAMED = { cargo: 'cargo_hakurou', coordinator: 'coordinator_hakurou' };
 function migrateChapters(g) {
+  const key = (k) => CHAPTER_RENAMED[k] || k;
   if (typeof g.chapter === 'number') {
     g.chapterLog = Object.keys(CHAPTER_BY_NO).filter((n) => +n <= g.chapter).map((n) => CHAPTER_BY_NO[n]);
     g.chapter = CHAPTER_BY_NO[g.chapter] || 'handover';
   }
-  g.chapterLog ||= [g.chapter];
+  g.chapter = key(g.chapter);
+  g.chapterLog = (g.chapterLog || [g.chapter]).map(key);
+  g.chapterSince ??= g.night;
+  g.awaitChoice ??= null;
   for (const n of [2, 3, 4, 5]) if (g.flags['camp' + n]) { g.flags['done_' + CHAPTER_BY_NO[n]] = true; delete g.flags['camp' + n]; }
-  for (const j of [...g.board, ...g.missions.map((m) => m.job)]) if (typeof j.campaign === 'number') j.campaign = CHAPTER_BY_NO[j.campaign];
+  for (const [from, to] of Object.entries(CHAPTER_RENAMED)) if (g.flags['done_' + from]) { g.flags['done_' + to] = true; delete g.flags['done_' + from]; }
+  for (const j of [...g.board, ...g.missions.map((m) => m.job)]) {
+    if (typeof j.campaign === 'number') j.campaign = CHAPTER_BY_NO[j.campaign];
+    if (j.campaign) j.campaign = key(j.campaign);
+  }
+  if (!g.flags.ally && g.chapterLog.some((k) => CHAPTERS[k] && CHAPTERS[k].ally)) g.flags.ally = 'hakurou';
 }
 
 /* 古いセーブに足りない項目を補う */
@@ -245,16 +257,39 @@ const REQS = {
   successes: { met: (n) => G.successes >= n, label: (n) => `依頼の成功 ${Math.min(n, G.successes)}/${n}` },
   rank: { met: (n) => G.rank >= n, label: (n) => `評判ランク${n}（今は${G.rank}、評判 ${G.cred}/${RANK_CRED[n - 1]} で顔役の紹介依頼が出る）` },
   netInterface: { met: (n) => G.runners.some((r) => r.role === 'net' && skill(r, 'インターフェース') >= n), label: (n) => `インターフェース${n}以上のネットランナー` },
+  chapterNights: { met: (n) => G.night - G.chapterSince >= n, label: (n) => `手がかりを洗う ${clamp(G.night - G.chapterSince, 0, n)}/${n}夜` },
 };
 const reqList = (reqs) => Object.entries(reqs || {}).map(([k, n]) => ({ ok: REQS[k].met(n), text: REQS[k].label(n) }));
 const reqsMet = (reqs) => reqList(reqs).every((x) => x.ok);
 const chapter = () => CHAPTERS[G.chapter];
 const reached = (key) => G.chapterLog.includes(key);
 
+/* next が { ally: {...} } なら、手を組んだ社で次の章が決まる */
+function nextChapter(ch) {
+  return typeof ch.next === 'string' ? ch.next : ch.next.ally[G.flags.ally] || Object.values(ch.next.ally)[0];
+}
+
 function enterChapter(key, out) {
   G.chapter = key;
+  G.chapterSince = G.night;
   if (!reached(key)) G.chapterLog.push(key);
   out.story.push(key);
+}
+
+/* 分岐の選択。手を組んだ社のヒートは下がり、残りの二社は上がる */
+const ALLY_HEAT = { ally: -30, others: 10 };
+function chooseBranch(i) {
+  const ch = CHAPTERS[G.awaitChoice];
+  const o = ch && ch.choice.options[i];
+  if (!o) return '選択肢が見つかりません';
+  G.awaitChoice = null;
+  G.flags.ally = o.ally;
+  for (const c of CORPS) G.heat[c] = clamp(G.heat[c] + (c === o.ally ? ALLY_HEAT.ally : ALLY_HEAT.others), 0, 100);
+  const out = { story: [] };
+  enterChapter(o.next, out);
+  G.storyQueue.push(...out.story);
+  refreshBoard(true);
+  return null;
 }
 
 function campaignJob() {
@@ -810,7 +845,8 @@ function applyBonus(i) {
 function campaignDone(key, out) {
   G.flags['done_' + key] = true;
   if (CHAPTERS[key].ending) { G.awaitEnding = true; return; }
-  enterChapter(CHAPTERS[key].next, out);
+  if (CHAPTERS[key].choice) { G.awaitChoice = key; return; }
+  enterChapter(nextChapter(CHAPTERS[key]), out);
 }
 
 function settle(ms, out) {
@@ -969,6 +1005,7 @@ function raid(corp, out) {
 }
 
 function endNight() {
+  if (G.awaitChoice) return null; // 分岐を選ぶまで夜は明けない
   G.nightInProgress = true;
   const out = { night: G.night, comms: [], settle: [], upkeep: [], upkeepTotal: 0, events: [], story: [], touched: {}, heat: [], deserted: [] };
   for (const ms of G.missions) {
@@ -1009,7 +1046,7 @@ function endNight() {
     if (ends) { out.settle.push(settle(ms, out)); done.push(ms); }
   }
   G.missions = G.missions.filter((m) => !done.includes(m));
-  if (chapter().advance && reqsMet(chapter().advance)) enterChapter(chapter().next, out);
+  if (chapter().advance && reqsMet(chapter().advance)) enterChapter(nextChapter(chapter()), out);
 
   // 2. 固定費
   out.upkeep = upkeepItems();
