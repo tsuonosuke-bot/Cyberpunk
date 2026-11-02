@@ -31,6 +31,8 @@ const World = (() => {
     kagerou: { name: '消せない裏口', skill: 'インターフェース', bonus: 2, desc: 'インターフェース+2' },
     yoru: { name: '自分の身体', skill: '射撃', bonus: 2, desc: '射撃+2' },
     haruka: { name: '消えない灯', skill: '医療', bonus: 3, desc: '医療+3' },
+    shigure: { name: '湾岸の帝王', skill: '運転', bonus: 3, desc: '運転+3' },
+    mikoto: { name: '二つ目の記憶', skill: '電子', bonus: 2, desc: '電子+2' },
   };
   const rivals = {
     kurogane: { name: 'クロガネ', bio: '湾岸の運び屋を束ねる古参。契約より現金を信じる。' },
@@ -49,7 +51,40 @@ const World = (() => {
     { text: '屋台街で無料診療。屋台街の医療+2', district: 'street', skill: '医療', bonus: 2 },
     { text: '設備業者のスト。上層の電子判定DV+2', district: 'upper', skill: '電子', bonus: -2 },
     { text: '住民の相互扶助。屋台街の説得+2', district: 'street', skill: '説得', bonus: 2 },
+    { text: 'ミツカネ警備部が新型の巡回ドローンを配備。対ミツカネの隠密DV+2', target: 'mitsukane', skill: '隠密', bonus: -2 },
+    { text: 'ハクロウ回線で大規模障害。街じゅうのICE判定+1', skill: 'インターフェース', bonus: 1 },
+    { text: '港で密輸船が沈没し、湾岸に検問。港の運転DV+2', district: 'harbor', skill: '運転', bonus: -2 },
+    { text: 'ヴェルデ、義体の定期メンテ料を値上げ。闇医者が混み、今夜の義体は1割高', cyber: 1.1 },
+    { text: '上層で人格転写の違法オークションが摘発。上層の説得DV+2', district: 'upper', skill: '説得', bonus: -2 },
   ];
+  // 街の噂。毎夜一つ。状況に応じた噂が混ざる
+  const rumors = [
+    '水没区の地下に、義体を外した者だけが集まる教会があるらしい。',
+    'ヴェルデの新しい治験は、参加者に「二人分」の報酬を払うという。',
+    '屋台街の麺屋の親父は、昔ミツカネの暗殺部隊にいたと言い張っている。',
+    '上層で、雨を止める装置の実験がまた失敗したらしい。',
+    '港に、乗員が一人もいない貨物船が三日も停泊している。',
+    'ハクロウ回線のノイズの中に、死んだ人の声が混じるという。',
+    '白蛇会の会長は、もう十年、誰にも顔を見せていない。',
+    '闇医者のあいだで、人間性を「測り直す」新しい機械が出回っているらしい。',
+    '軌道エレベーターの最上階には、三社の誰も知らない部屋があるという。',
+    '夜市の合成鰻が本当は何の肉なのか、誰も知らない。',
+    '記憶テープの闇市で、他人の初恋が一本300crで売られている。',
+    '企業区画の清掃ロボットが、夜中に同じ歌を口ずさんでいるらしい。',
+  ];
+  function rumor() {
+    const extra = [];
+    if (G.gangRelation <= -30) extra.push('白蛇会の若い衆が、あんたの隠れ家の場所を嗅ぎ回っているらしい。');
+    if (G.gangRelation >= 30) extra.push('白蛇会の古株が、あんたを「話のわかる新人」と呼んでいたそうだ。');
+    const dead = G.memorial[G.memorial.length - 1];
+    if (dead) extra.push(`屋台街の提灯に、${dead.name}の名前が加わった。誰かが花を置いていった。`);
+    const hot = CORPS.find(c => G.heat[c] >= 60);
+    if (hot) extra.push(`${CLIENTS[hot].short}の警備部が、新人フィクサーの名簿を作っているらしい。`);
+    for (const [k, rv] of Object.entries(G.rivals)) if (rv.stolen.length) extra.push(`${rivals[k].name}のところに移った${rv.stolen[rv.stolen.length - 1].name}は、あまり眠れていないらしい。`);
+    if (G.rank >= 2) extra.push('港のゴンドウが、あんたの名前を船乗りたちに回したそうだ。');
+    if (G.chapter >= 3) extra.push('港湾局の記録係が、急に長い休暇を取ったらしい。');
+    return extra.length && rnd() < .5 ? pick(extra) : pick(rumors);
+  }
   const conditionPool = [
     { text: '警察の一斉取り締まり', skill: '隠密', bonus: -2 },
     { text: '停電と監視の死角', skill: '隠密', bonus: 1 },
@@ -58,6 +93,8 @@ const World = (() => {
   const personal = {
     kagerou: { title: 'カゲロウ：見てはいけないログ', target: 'hakurou', district: 'upper', req: ['net'], intro: '社内の追手が回線を絞っている。カゲロウは、自分の足跡を消す最後の機会だと言った。', field: [S(15, '追手の事務所へ'), C(2, '回線警備', 'hacker'), GT(15, '記録室'), O('追跡記録を破棄'), E(15, '脱出')], net: [I(15, '追跡線', 'trace'), _, I(17, '個人記録', 'data'), _, _] },
     yoru: { title: 'ヨル：腕も目も自分のもの', target: 'mitsukane', district: 'harbor', req: ['solo'], intro: '義体回収班の督促状が届いた。ヨルは封を裂き、回収拠点の住所だけを机に残した。', field: [S(15, '回収班の倉庫'), C(2, '回収班', 'armored'), R('廃車の影'), O('所有権記録を焼く'), E(15, '脱出')], net: N5() },
+    shigure: { title: 'シグレ：担保の車', district: 'harbor', req: ['driver'], rival: 'kurogane', intro: 'クロガネが、担保に取ったシグレの車を今夜の地下レースの賞品に出すらしい。シグレは黙って、使い古したキーを握りしめた。', field: [D(15, '地下レースに飛び入り'), C(2, 'クロガネの用心棒', 'armored'), D(17, '最終コーナー'), O('愛車を取り戻す'), E(15, '湾岸から離脱')], net: N5() },
+    mikoto: { title: 'ミコト：原本', target: 'verde', district: 'upper', req: ['tech', 'net'], intro: 'ヴェルデの低温保管施設に、治験の「原本」の記録が残っている。ミコトは、どちらが本物なのかを確かめたいと言った。答えがどちらでも、ここに戻ってくるとも。', field: [S(15, '保管施設の搬入口'), GT(17, '低温保管室'), C(2, '施設警備', 'hacker'), O('治験記録'), E(15, '脱出')], net: [I(15, '入館系', 'trace'), _, I(17, '治験記録の暗号', 'data'), _, _] },
     haruka: { title: 'ハルカ：診療所の灯', target: 'gang', district: 'street', req: ['med'], intro: '診療所を焼いた白蛇会の男が戻った。ハルカは次の患者が来る前に、今度こそ話をつけたいと言う。', field: [K(15, '白蛇会に事情を聞く'), C(3, '放火の実行犯', 'swarm'), M(15, '巻き込まれた住民の治療'), O('清算の証拠'), E(13, '診療所へ帰る')], net: N5() },
   };
   // Static jobs declare district in data.js; generated ones (deserter, personal, raid) fall back here.
@@ -110,7 +147,7 @@ const World = (() => {
     for (const [key, p] of Object.entries(personal)) {
       const r = G.runners.find(r => r.story === key);
       if (!r || r.contract !== 'exclusive' || r.loyalty < 70 || G.flags['personal_' + key] || hasJob('personal_' + key)) continue;
-      const j = addJob({ id: 'personal_' + key, rank: 2, ...p, nights: 1, payout: 7000, cred: 8, heat: 8, client: 'resident', personal: key, runnerId: r.id, desc: p.intro,
+      const j = addJob({ id: 'personal_' + key, rank: 2, target: null, ...p, nights: 1, payout: 7000, cred: 8, heat: 8, client: 'resident', personal: key, runnerId: r.id, desc: p.intro,
         routes: [{ name: '決着をつける', note: '本人と向き合う', field: clone(p.field), net: clone(p.net) }, { name: '裏から近づく', note: '隠密を優先する', field: [S(17, '裏から侵入'), ...clone(p.field).slice(1)], net: clone(p.net) }] }, true);
       j.expires = G.night + 5;
       G.flags['personal_' + key] = 'offered';
@@ -182,6 +219,7 @@ const World = (() => {
   }
   function nextNight() {
     G.news = Math.floor(Math.random() * news.length);
+    G.rumor = rumor();
     for (const key of Object.keys(districts)) {
       if (G.conditions[key] && G.conditions[key].until < G.night) delete G.conditions[key];
       if (!G.conditions[key] && rnd() < .3) G.conditions[key] = { ...clone(pick(conditionPool)), until: G.night + 2 };
@@ -210,7 +248,8 @@ const World = (() => {
     const cond = Object.entries(districts).filter(([k]) => G.conditions[k]).map(([k, name]) => `<li>${name}：${esc(G.conditions[k].text)}<span class="dim">（夜${G.conditions[k].until}まで／${G.conditions[k].skill}${G.conditions[k].bonus >= 0 ? '+' : ''}${G.conditions[k].bonus}）</span></li>`).join('');
     const gang = G.gangRelation >= 30 ? '<span class="chip b">友好</span>' : G.gangRelation <= -30 ? '<span class="chip p">敵対</span>' : '';
     return `<section class="panel world"><h3>今夜の街</h3>
-      <ul class="wlist"><li><span class="label">NEWS</span> ${esc(currentNews().text)}</li>${cond || '<li class="dim">地区はどこも平常</li>'}
+      <ul class="wlist"><li><span class="label">NEWS</span> ${esc(currentNews().text)}</li>
+      <li class="rumor"><span class="label">噂</span> ${esc(G.rumor ||= rumor())}</li>${cond || '<li class="dim">地区はどこも平常</li>'}
       <li>白蛇会との関係 <b class="num">${G.gangRelation}</b> ${gang}<span class="hint dim">　+30以上で屋台街の情報が半額・路上育ちの候補が増える。−30以下で屋台街の交戦に敵+1、3夜ごとに嫌がらせ</span></li>
       ${Object.entries(rivals).map(([k,r]) => `<li>${r.name}：関係 <span class="num">${G.rivals[k].relation}</span>／横取り ${G.rivals[k].taken}件／引き抜き ${G.rivals[k].stolen.map(x => esc(x.name)).join('、') || 'なし'}<span class="hint dim">　${r.bio}</span></li>`).join('')}</ul></section>`;
   }

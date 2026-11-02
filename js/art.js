@@ -17,7 +17,7 @@ function hashStr(s) {
 }
 
 /* ───────── 肖像（一枚絵＋義体の重ね描き） ─────────
-   絵は assets/portraits/ に置く。ロール×性別×2枚の30枚と、物語つき3人の専用の絵。
+   絵は assets/portraits/ に置く。ロール×性別×2枚の30枚と、物語つき5人の専用の絵。
    本番の絵に差し替えるときは、同じ名前で置いて PORTRAIT_EXT を変えるか、PORTRAIT_FILES で名前を指定する。
    詳しくは assets/portraits/README.md を参照。 */
 
@@ -128,6 +128,46 @@ function implantOverlay(cyber, m, A) {
   if (has('voice')) {
     const [x, y] = A.throat;
     out.push(`<rect x="${x - 3}" y="${y - 1.6}" width="6" height="3.6" rx="0.8" fill="${PAL.chromeD}"/><path d="M${x - 2} ${y - 0.6} H${x + 2} M${x - 2} ${y + 0.4} H${x + 2} M${x - 2} ${y + 1.4} H${x + 2}" stroke="${PAL.chrome}" stroke-width="0.35"/>`);
+  }
+  if (has('reflex')) {
+    // 首筋から背骨へ続く、ピンクに光る増幅器の列
+    const [x, y] = A.neckSide;
+    let nodes = '';
+    for (let i = 0; i < 4; i++) nodes += `<rect x="${x + 8.6}" y="${y - 6 + i * 3.4}" width="2.4" height="2.2" rx="0.5" fill="${PAL.chromeD}" stroke="${PAL.pink}" stroke-width="0.4" ${glowP}/>`;
+    out.push(nodes);
+  }
+  if (has('milplate')) {
+    const [x, y] = A.chest;
+    let hex = '';
+    for (const [dx, dy] of [[-14, -6], [-9, -9], [-9, -3], [-4, -6]]) {
+      const cx = x + dx, cy = y + dy;
+      hex += `<path d="M${cx - 2.4} ${cy} L${cx - 1.2} ${cy - 2.1} L${cx + 1.2} ${cy - 2.1} L${cx + 2.4} ${cy} L${cx + 1.2} ${cy + 2.1} L${cx - 1.2} ${cy + 2.1} Z" fill="${PAL.chromeD}" stroke="${PAL.chrome}" stroke-width="0.4"/>`;
+    }
+    out.push(hex);
+  }
+  if (has('tacai')) {
+    // 左目の前に浮かぶ照準の線
+    const [x, y] = A.eyeL;
+    out.push(`<path d="M${x - 6} ${y - 3.5} H${x + 3} M${x - 6} ${y + 3.5} H${x + 1}" stroke="${PAL.blueL}" stroke-width="0.4" ${glowB}/><circle cx="${x}" cy="${y}" r="3.4" fill="none" stroke="${PAL.blueL}" stroke-width="0.35" stroke-dasharray="1 0.8"/>`);
+  }
+  if (has('firewall')) {
+    const [x, y] = A.neck;
+    out.push(`<path d="M${x - 6} ${y + 1} Q${x} ${y + 4} ${x + 6} ${y + 1}" stroke="${PAL.blue}" stroke-width="1" fill="none" ${glowB}/><rect x="${x - 1.2}" y="${y + 1.6}" width="2.4" height="1.6" fill="${PAL.chrome}"/>`);
+  }
+  if (has('heart')) {
+    const [x, y] = A.chest;
+    out.push(`<circle cx="${x - 10}" cy="${y + 2}" r="3" fill="${PAL.ink}" stroke="${PAL.chromeM}" stroke-width="0.7"/><path d="M${x - 12.4} ${y + 2} H${x - 11.2} L${x - 10.5} ${y + 0.6} L${x - 9.6} ${y + 3.4} L${x - 8.9} ${y + 2} H${x - 7.6}" stroke="${PAL.pink}" stroke-width="0.5" fill="none" ${glowP}/>`);
+  }
+  if (has('chameleon')) {
+    // 右頬に、周りの色を拾う鱗模様
+    const [hx, hy, rx] = A.head;
+    let scales = '';
+    for (let i = 0; i < 9; i++) scales += `<circle cx="${hx + rx * 0.35 + (i % 3) * 2.2 + (Math.floor(i / 3) % 2) * 1.1}" cy="${hy + 5 + Math.floor(i / 3) * 2}" r="0.9" fill="${PAL.blueL}" opacity="${0.25 + (i % 3) * 0.15}"/>`;
+    out.push(scales);
+  }
+  if (has('emochip')) {
+    const [x, y] = A.forehead;
+    out.push(`<rect x="${x - 9}" y="${y + 1}" width="3.4" height="1.6" rx="0.4" fill="${PAL.chromeD}"/><rect x="${x - 8.4}" y="${y + 1.4}" width="1" height="0.8" fill="${PAL.pink}" ${glowP}/>`);
   }
   return `<defs>${defs.join('')}</defs>${out.join('')}`;
 }

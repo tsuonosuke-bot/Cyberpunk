@@ -14,11 +14,11 @@ const RANK_ENEMY = {
   3: { dv: 17, atk: 16, dice: 4, plus: 3 },
 };
 const ROLE_CYBER = {
-  solo: ['arm', 'optics', 'synapse', 'plating', 'painblock'],
-  net: ['jack', 'coproc', 'ears', 'painblock'],
-  tech: ['toolfinger', 'coproc', 'plating', 'ears'],
-  med: ['medkit', 'coproc', 'plating', 'voice'],
-  driver: ['steering', 'synapse', 'plating', 'optics'],
+  solo: ['arm', 'optics', 'synapse', 'plating', 'painblock', 'reflex', 'milplate', 'heart'],
+  net: ['jack', 'coproc', 'ears', 'painblock', 'firewall', 'tacai'],
+  tech: ['toolfinger', 'coproc', 'plating', 'ears', 'tacai', 'chameleon'],
+  med: ['medkit', 'coproc', 'plating', 'voice', 'heart', 'emochip'],
+  driver: ['steering', 'synapse', 'plating', 'optics', 'reflex'],
 };
 
 const rnd = Math.random;
@@ -110,6 +110,8 @@ function pickGender() {
   return x < 0.42 ? 'm' : x < 0.84 ? 'f' : 'x';
 }
 
+const genBio = (origin) => pick(BIOS[origin].past) + pick(BIOS[origin].quirk);
+
 function makeRunner(role, opt = {}) {
   const R = ROLES[role];
   const origin = opt.origin || pick(Object.keys(ORIGINS));
@@ -126,7 +128,7 @@ function makeRunner(role, opt = {}) {
   const contact = opt.contact || (origin === 'corp' ? pick(CORPS) : origin === 'street' ? 'gang' : 'resident');
   const r = {
     id: G.nextId++, name: opt.name || freshName(), gender: opt.gender || pickGender(), role, origin, contact, base, skills,
-    cyber: (opt.cyber || []).slice(), gear: {}, xp: {}, armorBase: R.armor, story: opt.story || null, bio: opt.bio || '',
+    cyber: (opt.cyber || []).slice(), gear: {}, xp: {}, armorBase: R.armor, story: opt.story || null, bio: opt.bio || genBio(origin),
     contract: 'commission', stipend: 0, pref: opt.pref || pick(['any', 'any', 'any', 'commission', 'exclusive']),
     loyalty: 50, discontent: 0, wallet: rint(0, 600), lazarus: false,
     status: 'idle', therapy: 0, elite: 0, perk: false, jobs: 0, kills: 0, joined: G.night,
@@ -199,7 +201,7 @@ function refreshScouts() {
   const hiredOrGone = (k) => G.runners.some((r) => r.story === k) || G.memorial.some((r) => r.story === k) || G.flags['story_' + k];
   if (G.chapter >= 2 && !hiredOrGone('kagerou')) G.scouts.push(makeStory('kagerou'));
   else if (G.night >= 3 && rnd() < 0.2) {
-    const k = pick(['yoru', 'haruka'].filter((x) => !hiredOrGone(x)) || []);
+    const k = pick(['yoru', 'haruka', 'shigure', 'mikoto'].filter((x) => !hiredOrGone(x)));
     if (k) G.scouts.push(makeStory(k));
   }
   const roles = shuffle(Object.keys(ROLES));
@@ -286,6 +288,9 @@ function snap(r) {
     id: r.id, name: r.name, role: r.role, st, sk, hp: r.hp, maxHp: maxHp(r), armor: r.armor, armorMax: armorMax(r),
     cy: cyberMods(r), gm, gearOf, ap: Object.values(r.gear || {}).some((id) => GEAR[id] && GEAR[id].ap),
     pain: r.cyber.includes('painblock'), medkit: r.cyber.includes('medkit'),
+    heart: r.cyber.includes('heart'), firewall: r.cyber.includes('firewall'),
+    iceguard: Object.values(r.gear || {}).some((id) => GEAR[id] && GEAR[id].iceguard),
+    nonlethal: Object.values(r.gear || {}).some((id) => GEAR[id] && GEAR[id].nonlethal),
     perk: r.perk ? ROLES[r.role].perk.id : null, lazarus: r.lazarus, humanity: r.humanity,
     down: r.hp <= 0, dead: false, kills: 0, rescued: false,
   };
@@ -450,12 +455,21 @@ function hit(ctx, m, dmg, pierce) {
   if (!m.dead && ((ctx.team.field.includes(m) && m.hp < m.maxHp / 2) || (m.down && !m.rescued))) requestDecision(ctx, m.down ? '死亡セーブを生き延びた仲間が動けない' : '現場の仲間が重傷になった');
 }
 
+/* 黒ICEの逆流・敵ネットランナーの攻撃。防壁は無効化、ICE遮断フードは半減 */
+function iceHit(ctx, m, dmg) {
+  if (m.firewall) { sub(ctx, `${m.name}のニューラル防壁が逆流を遮断した`, 'ok'); credit(ctx, m, CYBER.firewall.name); return; }
+  if (m.iceguard) { dmg = Math.ceil(dmg / 2); credit(ctx, m, GEAR.icehood.name); }
+  hit(ctx, m, dmg, true);
+}
+
 function deathSave(ctx, m) {
   m.down = true;
   let bonus = ctx.all.some((x) => x !== m && alive(x) && x.role === 'med') ? 1 : 0;
   if (ctx.all.some((x) => x !== m && alive(x) && x.perk === 'surgeon')) bonus += 2;
+  if (m.heart) bonus += 2;
   const r = d(10), need = m.st.BODY + bonus;
   if (r < need) {
+    if (m.heart && r >= need - 2) credit(ctx, m, CYBER.heart.name);
     const surgeon = ctx.all.find((x) => x !== m && alive(x) && x.perk === 'surgeon');
     if (surgeon && r >= need - 2) credit(ctx, surgeon, ROLES.med.perk.name);
     L(ctx, m.name, `死亡セーブ d10(${r}) ＜ BODY ${m.st.BODY}${bonus ? `＋${bonus}` : ''}　生きているが動けない`, 'warn');
@@ -508,7 +522,7 @@ function combat(ctx, n, label, o = {}) {
           if(c.ok){const weak=type==='armored'&&(ctx.all.some(x=>alive(x)&&x.role==='tech')||m.ap);
             if(weak&&m.ap&&!ctx.all.some(x=>alive(x)&&x.role==='tech'))credit(ctx,m,'徹甲ライフル');
             foe.hits-=weak?2:1;
-            if(foe.hits<=0){m.kills++;if(s.shot===2)credit(ctx,m,ROLES.solo.perk.name);if(m.humanity<=15&&rnd()<.35){addHeat(ctx,ctx.job.target,4);sub(ctx,m.name+'が過剰な暴力をふるった','ng');}}
+            if(foe.hits<=0){m.kills++;if(s.shot===2)credit(ctx,m,ROLES.solo.perk.name);if(m.humanity<=15&&!m.nonlethal&&rnd()<.35){addHeat(ctx,ctx.job.target,4);sub(ctx,m.name+'が過剰な暴力をふるった','ng');}}
             else sub(ctx,'装甲兵はまだ動く。テックか徹甲ライフルがあれば弱点を突ける','warn');}
         }
         s.player++;s.shot=0;
@@ -519,7 +533,7 @@ function combat(ctx, n, label, o = {}) {
     if(s.stage==='enemy') {
       if(type==='hacker'&&!s.hacked&&s.foes.some(f=>f.hits>0)) {
         s.hacked=true;const nr=ctx.team.net.find(alive);
-        if(nr){const c=check(ctx,nr,'インターフェース',18);L(ctx,nr.name,'敵ネットランナーのICE攻撃',c.ok?'ok':'ng',c.calc,'net');if(!c.ok)hit(ctx,nr,roll(2,6),true);}
+        if(nr){const c=check(ctx,nr,'インターフェース',18);L(ctx,nr.name,'敵ネットランナーのICE攻撃',c.ok?'ok':'ng',c.calc,'net');if(!c.ok)iceHit(ctx,nr,roll(2,6));}
         else {ctx.mods.extraEnemy=Math.max(1,ctx.mods.extraEnemy);L(ctx,'','敵ネットランナーが増援を呼んだ','ng');}
         if(ctx.alert)return null;
       }
@@ -651,7 +665,7 @@ function netPhase(ctx, p) {
     const c = check(ctx, nr, 'インターフェース', p.dv);
     L(ctx, nr.name, `${p.l}${k ? '（再侵入）' : ''}`, c.ok ? 'ok' : 'ng', c.calc, 'net');
     if (c.ok) { if (p.fx === 'data') ctx.goals++; return; }
-    if (p.dv >= 17) { sub(ctx, '黒ICEの逆流', 'ng'); hit(ctx, nr, roll(2, 6), true); }
+    if (p.dv >= 17) { sub(ctx, '黒ICEの逆流', 'ng'); iceHit(ctx, nr, roll(2, 6)); }
     if (!alive(nr)) break;
   }
   netFail(ctx, p);
@@ -850,6 +864,25 @@ function settle(ms, out) {
   return s;
 }
 
+/* ───────── 幕間 ───────── */
+
+const INTERLUDE_WHEN = {
+  firstCyber: () => G.flags.anyCyber,
+  firstDeath: () => G.memorial.length > 0,
+  edge: () => G.runners.some((r) => r.humanity > 0 && r.humanity <= 15),
+  harbor: () => G.rank >= 2,
+  watched: () => CORPS.some((c) => G.heat[c] >= 80),
+  rain: () => G.night >= 12,
+  ghost: () => G.flags.camp2,
+};
+/* 一夜に一つまで。条件を満たした最初の未読の幕間を流す */
+function interlude(out) {
+  const key = Object.keys(INTERLUDES).find((k) => !G.flags['interlude_' + k] && INTERLUDE_WHEN[k] && INTERLUDE_WHEN[k]());
+  if (!key) return;
+  G.flags['interlude_' + key] = true;
+  out.story.push(key);
+}
+
 /* ───────── 夜の終わり ───────── */
 
 function upkeepItems() {
@@ -1016,6 +1049,7 @@ function endNight() {
   }
   for (const c of CORPS) if (G.heat[c] >= 100) raid(c, out);
   out.heat = CORPS.map((c) => [c, G.heat[c], G.heat[c] - heatBefore[c]]);
+  interlude(out);
 
   // 5. 赤字判定
   if (G.money < 0) {
@@ -1071,6 +1105,7 @@ function fire(r) {
 
 const cyberPrice = (c) => Math.round((CYBER[c].loan[0] * CYBER[c].loan[1] * 0.8 * World.priceMultiplier()) / 50) * 50;
 function installCyber(r, c) {
+  if (G) G.flags.anyCyber = true;
   const hpRatio = r.hp / maxHp(r);
   r.cyber.push(c);
   r.humanity -= CYBER[c].hl;

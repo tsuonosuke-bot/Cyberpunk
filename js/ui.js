@@ -109,7 +109,7 @@ function runnerCard(r, mode, idx) {
       <span class="role">${R.tag}<small>${R.name}</small></span>
     </header>
     <div class="meta">${ORIGINS[r.origin].name} ・ ${contactText(r)}${mode === 'roster' ? ` ・ <span class="st st-${r.status}${r.hp <= 0 ? ' st-down' : ''}">${statusText(r)}</span>` : ''}</div>
-    ${mode === 'scout' ? `<p class="bio">${esc(r.bio || R.desc)}</p>` : ''}
+    ${mode !== 'doc' ? `<p class="bio">${esc(r.bio || R.desc)}</p>` : ''}
     ${bars(r)}
     <div class="stats">${STATS.map((k) => `<span><i>${k}</i><b class="num">${stat(r, k)}</b></span>`).join('')}</div>
     <div class="skills">${skills}</div>
@@ -560,11 +560,11 @@ function stepSettle(s) {
 }
 
 function stepStory(n) {
-  const st = STORY[n];
-  return `<div class="label">MAIN ・ ブラックボックス</div>
+  const st = STORY[n] || INTERLUDES[n];
+  return `<div class="label">${STORY[n] ? 'MAIN ・ ブラックボックス' : 'INTERLUDE ・ ヨミハマ'}</div>
     <h2>${st.title}</h2>
     ${st.body.map((p) => `<p class="story">${p}</p>`).join('')}
-    <p class="storygoal"><span class="label">目標</span> ${st.goal}</p>
+    ${st.goal ? `<p class="storygoal"><span class="label">目標</span> ${st.goal}</p>` : ''}
     <div class="mact"><button class="primary" data-act="next">次へ</button></div>`;
 }
 
@@ -629,8 +629,8 @@ function stepCutin(key) {
   const s = UI.flow.steps[UI.flow.step];
   const out = UI.flow.out;
   if (s.k === 'story') {
-    const [kick, title] = STORY[s.n].title.split('　');
-    return cutin({ kicker: `MAIN ・ ${kick}`, title, tone: 'pink' });
+    const [kick, title] = (STORY[s.n] || INTERLUDES[s.n]).title.split('　');
+    return cutin({ kicker: STORY[s.n] ? `MAIN ・ ${kick}` : kick, title, tone: STORY[s.n] ? 'pink' : 'blue' });
   }
   if (s.k === 'comm' && out.comms[s.i].raid) return cutin({ kicker: '警報', title: '襲撃', sub: esc(out.comms[s.i].title), tone: 'red' });
   if (s.k === 'settle') {
@@ -739,6 +739,14 @@ function renderTitle() {
   UI.modalKey = '';
 }
 
+/* 生き残ったランナーのその後。個人依頼を終えた物語つきは専用の一行 */
+function epilogue(r) {
+  if (r.story && EPILOGUES.story[r.story] && G.flags['personal_' + r.story] === 'complete') return EPILOGUES.story[r.story];
+  const z = humZone(r.humanity).key;
+  const lines = EPILOGUES[z === 'gone' ? 'sign' : z];
+  return lines[r.id % lines.length].replace('{name}', r.name);
+}
+
 function renderEnding() {
   const t = G.ended.type;
   const e = t === 'bankrupt'
@@ -748,6 +756,7 @@ function renderEnding() {
     <div class="label">ENDING ・ 夜${G.night}</div>
     <h1 class="logo-big">${e.title}</h1>
     ${e.body.map((p) => `<p class="story">${p}</p>`).join('')}
+    ${G.runners.length ? `<ul class="epilogue">${G.runners.map((r) => `<li>${esc(epilogue(r))}</li>`).join('')}</ul>` : ''}
     <dl class="ledger endstats">
       <div><dt>過ごした夜</dt><dd class="num">${G.night}</dd></div>
       <div><dt>所持金</dt><dd class="num">${cr(G.money)}</dd></div>

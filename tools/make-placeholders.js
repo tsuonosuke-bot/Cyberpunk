@@ -90,6 +90,10 @@ const STORY = {
     extra: '<path d="M58 44 L62 50 L59 52" fill="none" stroke="#5e2a3c" stroke-width="0.9"/>' },
   haruka: { role: 'med', gender: 'f', variant: 2, skin: SKINS[1], hair: '#3a2a35', accent: '#ff4f9a', name: 'ハルカ',
     extra: '<circle cx="50" cy="15" r="6" fill="#3a2a35"/><rect x="38" y="37.5" width="9" height="5" rx="1.5" fill="none" stroke="#d2d9e6" stroke-width="0.7"/><rect x="53" y="37.5" width="9" height="5" rx="1.5" fill="none" stroke="#d2d9e6" stroke-width="0.7"/>' },
+  shigure: { role: 'driver', gender: 'f', variant: 1, skin: SKINS[0], hair: '#ff4f9a', accent: '#ff4f9a', name: 'シグレ',
+    extra: '<path d="M60 46 L66 44" stroke="#ff4f9a" stroke-width="0.6" opacity=".8"/><circle cx="64" cy="60" r="1.6" fill="none" stroke="#d2d9e6" stroke-width="0.6"/>' },
+  mikoto: { role: 'tech', gender: 'x', variant: 2, skin: SKINS[4], hair: '#e9ebee', accent: '#6f9dff', name: 'ミコト',
+    extra: '<path d="M50 20 V58" stroke="#6f9dff" stroke-width="0.4" stroke-dasharray="1.2 1" opacity=".7"/>' },
 };
 
 function write(name, svg) {

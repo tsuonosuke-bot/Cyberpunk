@@ -535,3 +535,5 @@ button[aria-pressed="true"] { background: var(--ink); color: var(--sheet); }
 .slot-h { font-size: 13.5px; margin-top: 6px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
 .cw.gear.owned { opacity: 1; border-color: var(--ink); }
 .cw .actions { align-items: center; }
+.wlist .rumor { color: var(--ink-soft); font-style: italic; }
+.epilogue { list-style: none; padding: 0; display: grid; gap: 6px; font-size: 14.5px; max-width: 60ch; border-left: 2px solid var(--blue); padding-left: 12px; }
