@@ -34,14 +34,24 @@ test('personal success coexists with role perk and failure costs loyalty',()=>{
   run('ms.result.success=false; World.settle(ms,s,{});');
   assert.equal(run('r.loyalty'),50);
 });
-test('upgrade costs, recurring fees, recovery, therapy and no duplicate purchases',()=>{
+test('tiered upgrades are affordable, stack, charge upkeep and stop at max',()=>{
   const run=game();
-  assert.equal(run('Object.values(World.upgrades).every(u=>u.cost>=16000)'),true);
+  assert.equal(run('Object.keys(World.upgrades).length>=8 && Object.values(World.upgrades).every(u=>u.levels.every(l=>l.cost<=10000))'),true);
   run('G.money=100000; World.buyUpgrade("medical"); World.buyUpgrade("network"); World.buyUpgrade("bunks");');
   assert.equal(run('World.therapyNights()'),2);
-  assert.equal(run('World.upkeep().reduce((n,r)=>n+r[1],0)'),220);
-  assert.equal(run('World.buyUpgrade("network")'),'購入済みです');
+  assert.equal(run('World.upkeep().reduce((n,r)=>n+r[1],0)'),80);
   assert.equal(run('World.recoveryBonus()'),4);
+  assert.equal(run('World.buyUpgrade("network")'),null);
+  assert.equal(run('World.level("network")'),2);
+  assert.equal(run('World.upkeep().reduce((n,r)=>n+r[1],0)'),120);
+  assert.equal(run('World.buyUpgrade("network")'),'購入済みです');
+  run('G.upgrades.armory=true; World.init(G);');
+  assert.equal(run('G.upgrades.armory===1 && World.gearMultiplier()===.8'),true);
+});
+test('training grows the main skill of idle runners overnight',()=>{
+  const run=game();
+  run('G.money=100000; World.buyUpgrade("training"); const r=G.runners[0]; r.status="idle"; const before=r.skills["射撃"]; r.xp={射撃:xpNeed(before)-1}; const out={events:[]}; World.afterNight(out,new Set());');
+  assert.equal(run('r.skills["射撃"]===before+1 && out.events.some(e=>e.text.includes("訓練"))'),true);
 });
 test('news has at least10 effects, shared conditions modifiers and discounts expire',()=>{
   const run=game();

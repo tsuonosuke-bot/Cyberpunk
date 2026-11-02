@@ -110,6 +110,24 @@ const CYBER = {
   voice: { name: '声帯変調器', part: '喉', mods: { 説得: 2, 隠密: 1 }, loan: [300, 10], hl: 4, desc: '説得+2 隠密+1' },
 };
 
+/* 装備（人間性を削らない成長）。部位ごとに1つ。歩合は本人の手持ち、専属はフィクサーが払う。 */
+const GEAR_SLOTS = { weapon: '武器', body: '防具', tool: '道具' };
+const GEAR = {
+  pistol: { name: '重拳銃「ナナミ」', slot: 'weapon', price: 800, mods: { 射撃: 1 }, roles: ['solo', 'driver', 'tech', 'med'], desc: '射撃+1' },
+  smg: { name: 'スマートSMG', slot: 'weapon', price: 2400, mods: { 射撃: 2 }, roles: ['solo', 'driver'], desc: '射撃+2' },
+  aprifle: { name: '徹甲ライフル', slot: 'weapon', price: 2800, mods: { 射撃: 1 }, ap: true, roles: ['solo'], desc: '射撃+1。テックがいなくても装甲兵の弱点を撃ち抜く' },
+  jacket: { name: '防弾ジャケット', slot: 'body', price: 700, mods: { armor: 2 }, roles: ['solo', 'driver', 'tech', 'med', 'net'], desc: '防具の上限+2' },
+  heavyvest: { name: '重装甲ベスト', slot: 'body', price: 1800, mods: { armor: 4, 回避: -1 }, roles: ['solo'], desc: '防具の上限+4、回避−1' },
+  poncho: { name: '光学迷彩ポンチョ', slot: 'body', price: 1600, mods: { 隠密: 2 }, roles: ['solo', 'tech', 'net'], desc: '隠密+2' },
+  deck: { name: 'サイバーデッキ改', slot: 'tool', price: 1200, mods: { インターフェース: 1 }, roles: ['net'], desc: 'インターフェース+1' },
+  milDeck: { name: '軍用デッキ', slot: 'tool', price: 3200, mods: { インターフェース: 2 }, roles: ['net'], desc: 'インターフェース+2' },
+  toolkit: { name: '電子工具セット', slot: 'tool', price: 900, mods: { 電子: 2 }, roles: ['tech'], desc: '電子+2' },
+  medbag: { name: '野戦医療バッグ', slot: 'tool', price: 900, mods: { 医療: 2 }, roles: ['med'], desc: '医療+2' },
+  scanner: { name: '熱源スキャナー', slot: 'tool', price: 900, mods: { 知覚: 2 }, roles: ['solo', 'tech', 'net', 'med'], desc: '知覚+2（罠・狙撃手に効く）' },
+  rig: { name: 'ドライブリグ', slot: 'tool', price: 1000, mods: { 運転: 2 }, roles: ['driver'], desc: '運転+2' },
+  earpiece: { name: '交渉用イヤピース', slot: 'tool', price: 800, mods: { 説得: 2 }, roles: ['med', 'driver'], desc: '説得+2' },
+};
+
 /* フェーズ表の記法 */
 const _ = null;
 const H = (p) => Object.assign(p, { hidden: true });

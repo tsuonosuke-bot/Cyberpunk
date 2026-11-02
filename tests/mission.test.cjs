@@ -84,6 +84,7 @@ test('a field critical wound and a survived death save each request a decision',
 test('combat cursor resumes after the hit, without repeating enemy attacks or rerolling damage',()=>{
   const {run,calls}=game();
   run(`
+    Object.assign(RANK_ENEMY[1],{dice:2,plus:1});
     const r=G.runners[0],team={field:[snap(r)],support:[],net:[]};
     const m=team.field[0];m.maxHp=20;m.hp=12;m.armor=0;m.st.REF=0;m.sk.回避=0;m.st.BODY=10;
     const j={rank:1,district:'harbor',intel:false,routes:[{field:[H(C(2,'待ち伏せ'))],net:[null]}]};

@@ -2,12 +2,31 @@
 const World = (() => {
   const districts = { street: '屋台街', harbor: '港湾倉庫', upper: '企業区画上層' };
   const enemies = { standard: '通常兵', armored: '装甲兵', hacker: '敵ネットランナー', sniper: '狙撃手', swarm: '群れ' };
+  // 段階つきの設備。G.upgrades[key] は購入済みの段階（0〜levels.length）
   const upgrades = {
-    security: { name: '防犯システム', cost: 18000, upkeep: 80, desc: '襲撃の敵を1体減らし、白蛇会の嫌がらせを防ぐ' },
-    medical: { name: '医療室', cost: 22000, upkeep: 120, desc: '待機中のHP回復+4。待機メドテックがいればさらに+3' },
-    network: { name: 'ネット設備', cost: 20000, upkeep: 100, desc: 'インターフェース判定+1' },
-    bunks: { name: '仮眠室', cost: 16000, upkeep: 0, desc: 'セラピーを3夜から2夜に短縮（新規利用から）' },
+    training: { name: '訓練室', levels: [
+      { cost: 3000, upkeep: 30, desc: '待機中のランナーは毎夜、本業の技能に経験+1' },
+      { cost: 7000, upkeep: 60, desc: '本業の技能に経験+2、ほかの技能1つにも経験+1' }] },
+    armory: { name: '武器庫', levels: [
+      { cost: 2500, upkeep: 20, desc: '装備が2割引。防具の修理費が半額' }] },
+    medical: { name: '医療室', levels: [
+      { cost: 4000, upkeep: 40, desc: '待機中のHP回復+4' },
+      { cost: 8000, upkeep: 80, desc: '待機中のHP回復+8。待機メドテックがいればさらに+3' }] },
+    network: { name: 'ネット設備', levels: [
+      { cost: 4500, upkeep: 40, desc: 'インターフェース判定+1' },
+      { cost: 9000, upkeep: 80, desc: 'インターフェース判定+2' }] },
+    garage: { name: '車庫', levels: [
+      { cost: 3500, upkeep: 30, desc: '運転判定+1' },
+      { cost: 7000, upkeep: 60, desc: '運転判定+2' }] },
+    informant: { name: '情報屋の端末', levels: [
+      { cost: 3000, upkeep: 30, desc: '情報の購入費−30%' }] },
+    security: { name: '防犯システム', levels: [
+      { cost: 3000, upkeep: 30, desc: '白蛇会の嫌がらせを防ぐ' },
+      { cost: 6000, upkeep: 60, desc: '襲撃の敵を1体減らす' }] },
+    bunks: { name: '仮眠室', levels: [
+      { cost: 2500, upkeep: 0, desc: 'セラピーを3夜から2夜に短縮（新規利用から）' }] },
   };
+  const lv = (key) => +(G.upgrades[key] || 0);
   const perks = {
     kagerou: { name: '消せない裏口', skill: 'インターフェース', bonus: 2, desc: 'インターフェース+2' },
     yoru: { name: '自分の身体', skill: '射撃', bonus: 2, desc: '射撃+2' },
@@ -50,6 +69,7 @@ const World = (() => {
   }
   function init(g) {
     g.upgrades ||= {};
+    for (const k in g.upgrades) if (g.upgrades[k] === true) g.upgrades[k] = 1;
     g.gangRelation ??= 0;
     g.rivals ||= Object.fromEntries(Object.keys(rivals).map(k => [k, { relation: 0, stolen: [], taken: 0 }]));
     g.conditions ||= {};
@@ -69,15 +89,19 @@ const World = (() => {
       L(ctx, '', '白蛇会の妨害。次の交戦で敵+1', 'ng');
     }
   }
-  function checkBonus(ctx, m, sk) {
+  // 判定の補正を出どころごとに返す。通信の計算式と「効いたもの」の集計に使う
+  function checkParts(ctx, m, sk) {
     const env = ctx.worldConditions || { news: currentNews(), condition: G.conditions[ctx.job.district] };
-    let b = sk === 'インターフェース' && G.upgrades.network ? 1 : 0;
+    const parts = [];
+    if (sk === 'インターフェース' && lv('network')) parts.push({ label: upgrades.network.name, v: lv('network') });
+    if (sk === '運転' && lv('garage')) parts.push({ label: upgrades.garage.name, v: lv('garage') });
     const p = perks[(getR(m.id) || {}).storyPerk];
-    if (p && p.skill === sk) b += p.bonus;
-    if (env.news && applies(env.news, ctx.job) && env.news.skill === sk) b += env.news.bonus;
-    if (env.condition && env.condition.skill === sk) b += env.condition.bonus;
-    return b;
+    if (p && p.skill === sk) parts.push({ label: p.name, v: p.bonus, perk: true });
+    if (env.news && applies(env.news, ctx.job) && env.news.skill === sk) parts.push({ label: 'ニュース', v: env.news.bonus });
+    if (env.condition && env.condition.skill === sk) parts.push({ label: '地区', v: env.condition.bonus });
+    return parts;
   }
+  const checkBonus = (ctx, m, sk) => checkParts(ctx, m, sk).reduce((a, p) => a + p.v, 0);
   function payoutMultiplier(j) {
     const n = currentNews();
     return n.payout && applies(n, j) && j.tags.includes(n.tag) ? n.payout : 1;
@@ -131,13 +155,24 @@ const World = (() => {
       if (j) { const k = Object.keys(rivals)[Math.floor(G.night / 3) % 2]; G.board = G.board.filter(x => x !== j); G.rivals[k].taken++; out.events.push({ kind: 'warn', text: `${rivals[k].name}が「${j.title}」を先に引き受けた` }); }
     }
     if (G.gangRelation <= -30 && G.night % 3 === 0) {
-      if (G.upgrades.security) out.events.push({ kind: 'ok', text: '防犯システムが白蛇会の嫌がらせを防いだ' });
+      if (lv('security')) out.events.push({ kind: 'ok', text: '防犯システムが白蛇会の嫌がらせを防いだ' });
       else { G.money -= 250; out.events.push({ kind: 'ng', text: '白蛇会の嫌がらせ。修繕費250cr' }); }
     }
   }
   function afterNight(out, tonight) {
     const b = recoveryBonus();
     if (b) for (const r of G.runners) if (r.status === 'idle' && !tonight.has(r.id)) r.hp = Math.min(maxHp(r), r.hp + b);
+    const t = lv('training');
+    if (t) for (const r of G.runners) {
+      if (r.status !== 'idle' || tonight.has(r.id) || r.hp <= 0) continue;
+      const main = mainSkill(r.role);
+      const ups = [[main, gainXp(r, main, t)]];
+      if (t >= 2) {
+        const other = pick(Object.keys(ROLES[r.role].skills).filter(k => k !== main));
+        ups.push([other, gainXp(r, other, 1)]);
+      }
+      for (const [sk, u] of ups) if (u.length) out.events.push({ kind: 'ok', text: `${r.name}の${sk}が訓練で ${u[u.length - 1]} に上がった` });
+    }
     // The last playable night has ended; refreshBoard would otherwise silently remove these jobs.
     for (const j of G.board.filter(j => j.personal && j.expires <= G.night)) {
       const r = getR(j.runnerId);
@@ -158,19 +193,37 @@ const World = (() => {
     G.rivals[key].stolen.push({ name: r.name, role: r.role });
     return rivals[key].name;
   }
+  const nextLevel = (key) => upgrades[key].levels[lv(key)] || null;
   function buyUpgrade(key) {
     const u = upgrades[key];
     if (!u) return '強化が見つかりません';
-    if (G.upgrades[key]) return '購入済みです';
-    if (G.money < u.cost) return '所持金が足りません';
-    G.money -= u.cost; G.upgrades[key] = true; return null;
+    const next = nextLevel(key);
+    if (!next) return '購入済みです';
+    if (G.money < next.cost) return '所持金が足りません';
+    G.money -= next.cost; G.upgrades[key] = lv(key) + 1; return null;
   }
-  function recoveryBonus() { return G.upgrades.medical ? 4 + (G.runners.some(r => r.role === 'med' && available(r)) ? 3 : 0) : 0; }
+  function recoveryBonus() {
+    const m = lv('medical');
+    return m ? 4 * m + (m >= 2 && G.runners.some(r => r.role === 'med' && available(r)) ? 3 : 0) : 0;
+  }
   function homeHtml() {
     init(G);
-    return `<section class="panel"><h3>今夜のニュース</h3><p>${esc(currentNews().text)}</p><h3>地区の状況</h3>${Object.entries(districts).map(([k, name]) => `<p>${name}：${G.conditions[k] ? `${esc(G.conditions[k].text)}（夜${G.conditions[k].until}まで／${G.conditions[k].skill}${G.conditions[k].bonus >= 0 ? '+' : ''}${G.conditions[k].bonus}）` : '平常'}</p>`).join('')}<h3>白蛇会との関係 <span class="num">${G.gangRelation}</span></h3><p>+30以上：屋台街の情報が半額、路上育ちの候補が増える。−30以下：屋台街の交戦に敵+1、3夜ごとに嫌がらせ。</p></section>
-      <section class="panel"><h3>隠れ家の強化</h3><div class="cws">${Object.entries(upgrades).map(([k,u]) => `<article class="cw"><h4>${u.name}</h4><p>${u.desc}</p><p>${fmt(u.cost)}cr／維持費${u.upkeep}cr/夜</p><button data-act="upgrade" data-v="${k}" ${G.upgrades[k] || G.money < u.cost ? 'disabled' : ''}>${G.upgrades[k] ? '購入済み' : '購入する'}</button></article>`).join('')}</div></section>
-      <section class="panel"><h3>ライバル</h3>${Object.entries(rivals).map(([k,r]) => `<p><b>${r.name}</b>：${r.bio}</p><p>関係 ${G.rivals[k].relation}／横取り ${G.rivals[k].taken}件／引き抜き ${G.rivals[k].stolen.map(x => esc(x.name)).join('、') || 'なし'}</p>`).join('')}</section>`;
+    const cond = Object.entries(districts).filter(([k]) => G.conditions[k]).map(([k, name]) => `<li>${name}：${esc(G.conditions[k].text)}<span class="dim">（夜${G.conditions[k].until}まで／${G.conditions[k].skill}${G.conditions[k].bonus >= 0 ? '+' : ''}${G.conditions[k].bonus}）</span></li>`).join('');
+    const gang = G.gangRelation >= 30 ? '<span class="chip b">友好</span>' : G.gangRelation <= -30 ? '<span class="chip p">敵対</span>' : '';
+    return `<section class="panel world"><h3>今夜の街</h3>
+      <ul class="wlist"><li><span class="label">NEWS</span> ${esc(currentNews().text)}</li>${cond || '<li class="dim">地区はどこも平常</li>'}
+      <li>白蛇会との関係 <b class="num">${G.gangRelation}</b> ${gang}<span class="hint dim">　+30以上で屋台街の情報が半額・路上育ちの候補が増える。−30以下で屋台街の交戦に敵+1、3夜ごとに嫌がらせ</span></li>
+      ${Object.entries(rivals).map(([k,r]) => `<li>${r.name}：関係 <span class="num">${G.rivals[k].relation}</span>／横取り ${G.rivals[k].taken}件／引き抜き ${G.rivals[k].stolen.map(x => esc(x.name)).join('、') || 'なし'}<span class="hint dim">　${r.bio}</span></li>`).join('')}</ul></section>`;
+  }
+  function upgradesHtml() {
+    init(G);
+    return `<section class="panel"><h3>隠れ家の設備</h3><p class="hint dim">段階を上げるほど効果が強くなります。維持費は夜明けの固定費に加わります。</p><div class="cws">${Object.entries(upgrades).map(([k,u]) => {
+      const cur = lv(k), next = nextLevel(k);
+      const steps = u.levels.map((l, i) => `<li class="${i < cur ? 'done' : ''}">${i < cur ? '済' : `Lv${i + 1}`}　${l.desc}</li>`).join('');
+      return `<article class="cw ${cur ? 'owned' : ''}"><div class="cwh"><b>${u.name}</b>${u.levels.length > 1 ? `<span class="label num">Lv${cur}/${u.levels.length}</span>` : ''}</div><ul class="checks">${steps}</ul>
+        ${next ? `<p class="num">${fmt(next.cost)}cr ・ 維持費 ${next.upkeep}cr/夜</p>` : ''}
+        <button data-act="upgrade" data-v="${k}" ${!next || G.money < next.cost ? 'disabled' : ''}>${!next ? '最大' : cur ? `Lv${cur + 1}に上げる` : '導入する'}</button></article>`;
+    }).join('')}</div></section>`;
   }
   function jobBadge(j) {
     prepareJob(j);
@@ -182,12 +235,14 @@ const World = (() => {
     if (!p) return '';
     return `<div class="label">PERSONAL</div><h2>${esc(p.title)}</h2><p class="story">${esc(p.intro)}</p><p>5夜以内に本人を編成して依頼を受けてください。期限切れで本人は隠れ家を去ります。</p><button class="primary" data-act="personalnotice">依頼盤で確認する</button>`;
   }
-  return { districts, enemies, upgrades, perks, rivals, news, init, prepareJob, context, checkBonus, payoutMultiplier, refreshBoard, settle, beforeNight, afterNight, nextNight, poached, buyUpgrade, recoveryBonus, homeHtml, jobBadge, storyHtml,
-    upkeep: () => Object.entries(upgrades).filter(([k,u]) => G.upgrades[k] && u.upkeep).map(([,u]) => [`${u.name}の維持費`, u.upkeep]),
-    securityReduction: () => G.upgrades.security ? 1 : 0,
-    therapyNights: () => G.upgrades.bunks ? 2 : 3,
+  return { districts, enemies, upgrades, perks, rivals, news, init, prepareJob, context, checkParts, checkBonus, payoutMultiplier, refreshBoard, settle, beforeNight, afterNight, nextNight, poached, buyUpgrade, recoveryBonus, homeHtml, upgradesHtml, jobBadge, storyHtml, level: lv,
+    upkeep: () => Object.entries(upgrades).filter(([k]) => lv(k) && upgrades[k].levels[lv(k) - 1].upkeep).map(([k,u]) => [`${u.name}の維持費`, u.levels[lv(k) - 1].upkeep]),
+    securityReduction: () => lv('security') >= 2 ? 1 : 0,
+    therapyNights: () => lv('bunks') ? 2 : 3,
     priceMultiplier: () => currentNews().cyber || 1,
-    intelMultiplier: j => j.district === 'street' && G.gangRelation >= 30 ? .5 : 1,
+    gearMultiplier: () => lv('armory') ? .8 : 1,
+    repairMultiplier: () => lv('armory') ? .5 : 1,
+    intelMultiplier: j => (j.district === 'street' && G.gangRelation >= 30 ? .5 : 1) * (lv('informant') ? .7 : 1),
     scoutOptions: () => G.gangRelation >= 30 && rnd() < .6 ? { origin: 'street' } : {},
     perkHtml: r => r.storyPerk ? `<div class="perk on">専用技能「${perks[r.storyPerk].name}」：${perks[r.storyPerk].desc}</div>` : '',
   };
@@ -209,3 +264,7 @@ for (const j of JOBS.filter(j => j.rank === 2)) j.routes.forEach((route, i) => {
   for (const p of route.field) if (p && p.t === 'combat') p.enemyDV = rankTwoDVs[j.id][i][encounter++];
 });
 
+// Rank one: enemies that can actually hold a line, and checks a lone specialist can miss.
+// Two-person starting teams land around 70–90%; a full squad still clears almost everything.
+Object.assign(RANK_ENEMY[1], { dv: 17, atk: 16, dice: 3, plus: 2 });
+for (const j of JOBS.filter(j => j.rank === 1)) for (const r of j.routes) for (const p of [...r.field, ...r.net]) if (p && p.dv) p.dv += 2;

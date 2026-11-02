@@ -510,3 +510,28 @@ button[aria-pressed="true"] { background: var(--ink); color: var(--sheet); }
   .pf.glitchy, .pf.broken, .cstrip .ph.enemy.cur, .cstrip .ph.ice.broken { animation: none; }
   #city { transition: none; }
 }
+
+/* ── 説明の表示切り替え・成長・見込みの内訳 ── */
+.no-hints .hint { display: none !important; }
+.skills > span { display: inline-grid; grid-template-columns: auto auto; column-gap: 0; }
+.skills .xp { grid-column: 1 / -1; display: block; height: 2px; background: var(--tile); margin-top: 1px; }
+.skills .xp i { display: block; height: 100%; background: var(--blue); }
+.odds { flex-basis: 100%; display: grid; gap: 4px; }
+.odds ul { list-style: none; padding: 0; display: grid; gap: 3px; }
+.odds li { display: grid; grid-template-columns: minmax(7.5em, auto) 1fr 3.2em 2.4em; gap: 10px; align-items: center; font-size: 13px; }
+.odds li > span { display: flex; gap: 6px; align-items: baseline; min-width: 0; }
+.odds li b { font-size: 13px; text-align: right; font-weight: 600; }
+.odds .meter { display: block; height: 6px; background: var(--paper); }
+.odds .meter i { display: block; height: 100%; background: var(--blue); }
+.odds li.mid .meter i { background: color-mix(in srgb, var(--blue) 50%, var(--pink)); }
+.odds li.lo .meter i { background: var(--pink); }
+.odds li.lo b { color: var(--pink); }
+.odds .why li { grid-template-columns: 1fr auto; color: var(--ink-soft); }
+.credits, .growth { list-style: none; padding: 0; display: grid; gap: 3px; font-size: 13.5px; }
+.credits li { border-left: 2px solid var(--blue); padding-left: 8px; }
+.growth li { color: var(--blue); }
+.growth li::before { content: "▲ "; }
+.wlist { list-style: none; padding: 0; display: grid; gap: 4px; font-size: 13.5px; }
+.slot-h { font-size: 13.5px; margin-top: 6px; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.cw.gear.owned { opacity: 1; border-color: var(--ink); }
+.cw .actions { align-items: center; }

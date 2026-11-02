@@ -37,11 +37,35 @@ function cyberMods(r) {
   for (const id of r.cyber) for (const k in CYBER[id].mods) m[k] = (m[k] || 0) + CYBER[id].mods[k];
   return m;
 }
-const stat = (r, k) => r.base[k] + (cyberMods(r)[k] || 0);
-const skill = (r, k) => (r.skills[k] || 0) + (cyberMods(r)[k] || 0);
+function gearMods(r) {
+  const m = {};
+  for (const id of Object.values(r.gear || {})) if (GEAR[id]) for (const k in GEAR[id].mods) m[k] = (m[k] || 0) + GEAR[id].mods[k];
+  return m;
+}
+const allMods = (r) => { const m = cyberMods(r), g = gearMods(r); for (const k in g) m[k] = (m[k] || 0) + g[k]; return m; };
+const stat = (r, k) => r.base[k] + (allMods(r)[k] || 0);
+const skill = (r, k) => Math.max(0, (r.skills[k] || 0) + (allMods(r)[k] || 0));
 const maxHp = (r) => 11 + stat(r, 'BODY') * 4;
 const maxHum = (r) => r.base.EMP * 10;
-const armorMax = (r) => r.armorBase + (cyberMods(r).armor || 0);
+const armorMax = (r) => r.armorBase + (allMods(r).armor || 0);
+
+/* 使った技能は少しずつ伸びる。素の技能 n→n+1 に n+4 回の判定が要る（上限10） */
+const SKILL_CAP = 10;
+const xpNeed = (raw) => raw + 4;
+function gainXp(r, sk, n) {
+  r.xp ||= {};
+  const ups = [];
+  r.xp[sk] = (r.xp[sk] || 0) + n;
+  while ((r.skills[sk] || 0) < SKILL_CAP && r.xp[sk] >= xpNeed(r.skills[sk] || 0)) {
+    r.xp[sk] -= xpNeed(r.skills[sk] || 0);
+    r.skills[sk] = (r.skills[sk] || 0) + 1;
+    ups.push(r.skills[sk]);
+  }
+  if ((r.skills[sk] || 0) >= SKILL_CAP) r.xp[sk] = 0;
+  return ups;
+}
+/* 本業の技能：ロールの技能表でいちばん高い上限を持つもの */
+const mainSkill = (role) => Object.entries(ROLES[role].skills).sort((a, b) => b[1][1] - a[1][1])[0][0];
 const getR = (id) => G.runners.find((r) => r.id === id);
 const available = (r) => r.status === 'idle' && r.hp > 0;
 
@@ -99,7 +123,7 @@ function makeRunner(role, opt = {}) {
   const contact = opt.contact || (origin === 'corp' ? pick(CORPS) : origin === 'street' ? 'gang' : 'resident');
   const r = {
     id: G.nextId++, name: opt.name || freshName(), gender: opt.gender || pickGender(), role, origin, contact, base, skills,
-    cyber: (opt.cyber || []).slice(), armorBase: R.armor, story: opt.story || null, bio: opt.bio || '',
+    cyber: (opt.cyber || []).slice(), gear: {}, xp: {}, armorBase: R.armor, story: opt.story || null, bio: opt.bio || '',
     contract: 'commission', stipend: 0, pref: opt.pref || pick(['any', 'any', 'any', 'commission', 'exclusive']),
     loyalty: 50, discontent: 0, wallet: rint(0, 600), lazarus: false,
     status: 'idle', therapy: 0, elite: 0, perk: false, jobs: 0, kills: 0, joined: G.night,
@@ -144,6 +168,8 @@ function save() {
 function migrate(g) {
   const story = { kagerou: 'x', yoru: 'm', haruka: 'f' };
   for (const r of [...g.runners, ...g.scouts]) {
+    r.gear ||= {};
+    r.xp ||= {};
     if (r.gender) continue;
     let h = 0;
     for (const ch of r.name + r.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
@@ -246,8 +272,11 @@ function snap(r) {
   const st = {}, sk = {};
   for (const k of STATS) st[k] = stat(r, k);
   for (const k of SKILLS) sk[k] = skill(r, k);
+  const gm = gearMods(r), gearOf = {};
+  for (const id of Object.values(r.gear || {})) if (GEAR[id]) for (const k in GEAR[id].mods) if (GEAR[id].mods[k] > 0) gearOf[k] = GEAR[id].name;
   return {
     id: r.id, name: r.name, role: r.role, st, sk, hp: r.hp, maxHp: maxHp(r), armor: r.armor, armorMax: armorMax(r),
+    cy: cyberMods(r), gm, gearOf, ap: Object.values(r.gear || {}).some((id) => GEAR[id] && GEAR[id].ap),
     pain: r.cyber.includes('painblock'), medkit: r.cyber.includes('medkit'),
     perk: r.perk ? ROLES[r.role].perk.id : null, lazarus: r.lazarus, humanity: r.humanity,
     down: r.hp <= 0, dead: false, kills: 0, rescued: false,
@@ -259,13 +288,25 @@ function estimate(job, routeIdx, team, n = 240) {
   const base = snapTeam(team);
   const cp = (a) => a.map((m) => ({ ...m }));
   let ok = 0, death = 0;
+  const checks = {}, fails = {};
   for (let i = 0; i < n; i++) {
     const t = { field: cp(base.field), support: cp(base.support), net: cp(base.net) };
     const res = resolveMission(job, routeIdx, t, true);
     if (res.success) ok++;
+    else fails[res.reason] = (fails[res.reason] || 0) + 1;
     if (teamIds(t).some((m) => m.dead)) death++;
+    for (const k in res.checks) {
+      const c = checks[k] || (checks[k] = { ok: 0, n: 0, who: {} });
+      c.ok += res.checks[k].ok; c.n += res.checks[k].n;
+      for (const w in res.checks[k].who) c.who[w] = (c.who[w] || 0) + res.checks[k].who[w];
+    }
   }
-  return { p: ok / n, death: death / n };
+  const skills = Object.entries(checks).map(([sk, c]) => ({
+    sk, p: c.ok / c.n, per: c.n / n,
+    who: Object.entries(c.who).sort((a, b) => b[1] - a[1])[0][0],
+  })).sort((a, b) => a.p - b.p);
+  const causes = Object.entries(fails).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([reason, c]) => ({ reason, p: c / n }));
+  return { p: ok / n, death: death / n, skills, causes };
 }
 
 function payPreview(job, team) {
@@ -282,7 +323,7 @@ function payPreview(job, team) {
 function intelCost(job) {
   if (G.vouchers.intel > 0) return 0;
   const half = G.runners.some((r) => r.contact === job.client);
-  return Math.round(INTEL_COST[job.rank] * (half ? 0.5 : 1) * World.intelMultiplier(job));
+  return Math.round(INTEL_COST[job.rank] * (half ? 0.5 : 1) * World.intelMultiplier(job) / 10) * 10;
 }
 function buyIntel(uid) {
   const job = G.board.find((j) => j.uid === uid);
@@ -345,12 +386,21 @@ function abort(ctx, reason) {
   L(ctx, '', reason, 'ng');
 }
 
+/* 判定に効いたもの（技能・装備・義体・設備）を、成功に変えた回数として数える */
+function credit(ctx, m, label) {
+  if (ctx.sim) return;
+  const c = ctx.credit || (ctx.credit = {});
+  const k = m.id + '|' + label;
+  c[k] = (c[k] || 0) + 1;
+}
+
 function check(ctx, m, sk, dv) {
   const stK = SKILL_STAT[sk];
   const sv = m.st[stK], kv = m.sk[sk] || 0;
-  let bonus = World.checkBonus(ctx, m, sk);
-  if (m.perk === 'backdoor' && sk === 'インターフェース') bonus += 2;
-  if (m.perk === 'getaway' && sk === '運転') bonus += 3;
+  const parts = World.checkParts(ctx, m, sk);
+  if (m.perk === 'backdoor' && sk === 'インターフェース') parts.push({ label: ROLES.net.perk.name, v: 2, perk: true });
+  if (m.perk === 'getaway' && sk === '運転') parts.push({ label: ROLES.driver.perk.name, v: 3, perk: true });
+  const bonus = parts.reduce((a, p) => a + p.v, 0);
   const wound = !m.pain && m.hp < m.maxHp / 2 ? 2 : 0;
   const r = d(10);
   let ex = 0, rs = `d10(${r})`;
@@ -358,7 +408,23 @@ function check(ctx, m, sk, dv) {
   else if (r === 1) { ex = -d(10); rs = `d10(1, −${-ex})`; }
   const total = sv + kv + bonus - wound + r + ex;
   const ok = total >= dv;
-  const calc = ctx.sim ? '' : `${stK} ${sv}＋${sk} ${kv}${bonus ? `＋補正 ${bonus}` : ''}${wound ? '－重傷 2' : ''}＋${rs}＝${total} ${ok ? '≧' : '＜'} DV${dv}`;
+  const gear = (m.gm && m.gm[sk]) || 0, cyber = ((m.cy && m.cy[sk]) || 0) + ((m.cy && m.cy[stK]) || 0);
+  if (ctx.sim) {
+    const c = ctx.checks[sk] || (ctx.checks[sk] = { ok: 0, n: 0, who: {} });
+    c.n++; if (ok) c.ok++;
+    c.who[m.name] = (c.who[m.name] || 0) + 1;
+    return { ok, total, calc: '' };
+  }
+  const xp = ctx.xp || (ctx.xp = {});
+  (xp[m.id] ||= {})[sk] = (xp[m.id][sk] || 0) + 1;
+  if (ok) {
+    for (const p of parts) if (p.v > 0 && total - p.v < dv) credit(ctx, m, p.label);
+    if (gear > 0 && total - gear < dv) credit(ctx, m, m.gearOf[sk] || '装備');
+    if (cyber > 0 && total - cyber < dv) credit(ctx, m, '義体');
+  }
+  const inner = [gear ? `装備${gear > 0 ? '+' : '−'}${Math.abs(gear)}` : '', cyber ? `義体+${cyber}` : ''].filter(Boolean).join(' ');
+  const extra = parts.map((p) => `${p.v >= 0 ? '＋' : '－'}${p.label} ${Math.abs(p.v)}`).join('');
+  const calc = `${stK} ${sv}＋${sk} ${kv}${inner ? `〈${inner}〉` : ''}${extra}${wound ? '－重傷 2' : ''}＋${rs}＝${total} ${ok ? '≧' : '＜'} DV${dv}`;
   return { ok, total, calc };
 }
 
@@ -381,6 +447,8 @@ function deathSave(ctx, m) {
   if (ctx.all.some((x) => x !== m && alive(x) && x.perk === 'surgeon')) bonus += 2;
   const r = d(10), need = m.st.BODY + bonus;
   if (r < need) {
+    const surgeon = ctx.all.find((x) => x !== m && alive(x) && x.perk === 'surgeon');
+    if (surgeon && r >= need - 2) credit(ctx, surgeon, ROLES.med.perk.name);
     L(ctx, m.name, `死亡セーブ d10(${r}) ＜ BODY ${m.st.BODY}${bonus ? `＋${bonus}` : ''}　生きているが動けない`, 'warn');
     return;
   }
@@ -428,9 +496,11 @@ function combat(ctx, n, label, o = {}) {
           s.shot++;
           const foe=s.foes.find(f=>f.hits>0);if(!foe)return end(true);
           const c=check(ctx,m,'射撃',foe.dv);L(ctx,m.name,foe.name+'を攻撃',c.ok?'ok':'ng',c.calc);
-          if(c.ok){foe.hits-=type==='armored'&&ctx.all.some(x=>alive(x)&&x.role==='tech')?2:1;
-            if(foe.hits<=0){m.kills++;if(m.humanity<=15&&rnd()<.35){addHeat(ctx,ctx.job.target,4);sub(ctx,m.name+'が過剰な暴力をふるった','ng');}}
-            else sub(ctx,'装甲兵はまだ動く。テックがいれば弱点を突ける','warn');}
+          if(c.ok){const weak=type==='armored'&&(ctx.all.some(x=>alive(x)&&x.role==='tech')||m.ap);
+            if(weak&&m.ap&&!ctx.all.some(x=>alive(x)&&x.role==='tech'))credit(ctx,m,'徹甲ライフル');
+            foe.hits-=weak?2:1;
+            if(foe.hits<=0){m.kills++;if(s.shot===2)credit(ctx,m,ROLES.solo.perk.name);if(m.humanity<=15&&rnd()<.35){addHeat(ctx,ctx.job.target,4);sub(ctx,m.name+'が過剰な暴力をふるった','ng');}}
+            else sub(ctx,'装甲兵はまだ動く。テックか徹甲ライフルがあれば弱点を突ける','warn');}
         }
         s.player++;s.shot=0;
       }
@@ -469,7 +539,12 @@ function rest(ctx, p) {
     m.hp = Math.min(m.maxHp, m.hp + h);
     if (m.hp > before) parts.push(`${m.name} ${before}→${m.hp}`);
   }
-  if (ctx.all.some((x) => alive(x) && x.perk === 'patch')) for (const m of ctx.all) m.armor = Math.min(m.armorMax, m.armor + 2);
+  const patcher = ctx.all.find((x) => alive(x) && x.perk === 'patch');
+  if (patcher) {
+    let fixed = 0;
+    for (const m of ctx.all) { const a = m.armor; m.armor = Math.min(m.armorMax, m.armor + 2); fixed += m.armor - a; }
+    if (fixed) credit(ctx, patcher, ROLES.tech.perk.name);
+  }
   L(ctx, medic ? medic.name : '', `${p.l}　HP回復${medic ? '（手当て）' : ''}`, 'ok', parts.join('　'));
 }
 
@@ -593,7 +668,7 @@ function missionContext(job, routeIdx, team, sim, interactive = false) {
   const route = job.routes[routeIdx];
   const ctx = { job, routeIdx, rank: job.rank, team, sim, interactive,
     log: [], heat: {}, lazarus: [], mods: {extraEnemy:0, gateUp:0, chase:false},
-    rewardMult:1, aborted:false, reason:'', goals:0, need:0, night:1, clock:1320,
+    rewardMult:1, aborted:false, reason:'', goals:0, need:0, night:1, clock:1320, checks:{}, xp:{}, credit:{},
     ph:0, lane:'net', stage:0, decisions:0, alert:null, waiting:false };
   ctx.all = teamIds(team);
   World.context(ctx);
@@ -691,7 +766,7 @@ function campaignDone(n, out) {
 
 function settle(ms, out) {
   const job = ms.job, res = ms.result;
-  const s = { title: job.title, route: job.routes[ms.routeIdx].name, success: res.success, reason: res.reason, lines: [], net: 0, deaths: [], deadRunners: [], notes: [], cred: 0 };
+  const s = { title: job.title, route: job.routes[ms.routeIdx].name, success: res.success, reason: res.reason, lines: [], net: 0, deaths: [], deadRunners: [], notes: [], cred: 0, growth: [], credits: [] };
   const members = res.members;
   const n = members.length || 1;
   for (const m of members) {
@@ -699,6 +774,10 @@ function settle(ms, out) {
     if (!r) continue;
     if (m.dead) { s.deadRunners.push(clone(r)); killRunner(r, job.title); s.deaths.push(r.name); continue; }
     r.hp = m.hp; r.armor = m.armor; r.status = 'idle'; r.jobs++; r.kills += m.kills;
+    for (const [sk, n] of Object.entries((res.xp || {})[m.id] || {})) {
+      const ups = gainXp(r, sk, n);
+      if (ups.length) s.growth.push(`${r.name}の${sk}が ${ups[0] - 1}→${ups[ups.length - 1]} に上がった`);
+    }
     if (m.down && !m.rescued) s.notes.push(`${r.name}は重体で戻った（HP 0）`);
     if (m.rescued) s.notes.push(`${r.name}はラザロに回収された（HP 1）`);
     if (job.rank >= 2 && res.success) {
@@ -706,6 +785,15 @@ function settle(ms, out) {
       if (!r.perk && r.elite >= 3) { r.perk = true; s.notes.push(`${r.name}が「${ROLES[r.role].perk.name}」を覚えた：${ROLES[r.role].perk.desc}`); }
     }
   }
+  for (const [k, n] of Object.entries(res.credit || {})) {
+    const [id, label] = k.split('|');
+    const m = members.find((x) => String(x.id) === id);
+    if (!m) continue;
+    s.credits.push({ name: m.name, label, n });
+    const r = getR(m.id);
+    if (r && label === ROLES[r.role].perk.name) r.perkUses = (r.perkUses || 0) + n;
+  }
+  s.credits.sort((a, b) => b.n - a.n);
   if (res.lazarus.length) {
     const fee = Math.round(Math.max(job.payout, 2000) * 0.3) * res.lazarus.length;
     G.money -= fee; s.net -= fee;
@@ -831,7 +919,7 @@ function endNight() {
       save(); return out;
     }
     if (ctx.finished) ms.result = {success:ctx.success,reason:ctx.reason,log:ctx.log,heat:ctx.heat,
-      lazarus:ctx.lazarus,rewardMult:ctx.rewardMult,endNight:ctx.endNight,members:teamIds(ctx.team)};
+      lazarus:ctx.lazarus,rewardMult:ctx.rewardMult,endNight:ctx.endNight,members:teamIds(ctx.team),xp:ctx.xp,credit:ctx.credit};
   }
   World.beforeNight(out);
   const heatBefore = { ...G.heat };
@@ -884,7 +972,13 @@ function endNight() {
     if (r.humanity <= 0) { desert(r, out); continue; }
     if (r.contract === 'commission' && r.status === 'idle') {
       const opts = ROLE_CYBER[r.role].filter((c) => !r.cyber.includes(c) && cyberPrice(c) <= r.wallet);
-      if (opts.length && rnd() < 0.25) {
+      const wish = gearWish(r);
+      if (wish.length && rnd() < 0.3) {
+        const id = pick(wish);
+        r.wallet -= gearPrice(id);
+        r.wallet += equipGear(r, id);
+        out.events.push({ kind: 'ok', text: `${r.name}が自腹で「${GEAR[id].name}」を買った（${GEAR[id].desc}）` });
+      } else if (opts.length && rnd() < 0.25) {
         const c = pick(opts);
         r.wallet -= cyberPrice(c);
         installCyber(r, c);
@@ -995,8 +1089,44 @@ function buyCyber(r, c, pay) {
   installCyber(r, c);
   return null;
 }
+const gearPrice = (id) => Math.round((GEAR[id].price * World.gearMultiplier()) / 50) * 50;
+const gearRefund = (id) => Math.round(GEAR[id].price / 2 / 50) * 50;
+/* 同じ部位の装備は入れ替え。前の装備は半額で下取りし、払った側に戻す */
+function equipGear(r, id) {
+  const g = GEAR[id], old = r.gear[g.slot];
+  const hpRatio = r.hp / maxHp(r), armorLost = armorMax(r) - r.armor;
+  r.gear[g.slot] = id;
+  r.hp = Math.round(maxHp(r) * hpRatio);
+  r.armor = Math.max(0, armorMax(r) - armorLost);
+  return old ? gearRefund(old) : 0;
+}
+function buyGear(r, id) {
+  const g = GEAR[id];
+  if (!g) return '装備が見つかりません';
+  if (r.status === 'mission') return '仕事中です';
+  if (r.gear[g.slot] === id) return 'もう持っています';
+  const p = gearPrice(id);
+  if (r.contract === 'exclusive') {
+    if (p > G.money) return '所持金が足りません';
+    G.money -= p;
+    G.money += equipGear(r, id);
+  } else {
+    if (p > r.wallet) return `${r.name}の手持ちが足りません`;
+    r.wallet -= p;
+    r.wallet += equipGear(r, id);
+  }
+  return null;
+}
+/* 歩合のランナーが自腹で買う候補：相性がよく、今の装備より高いもの */
+function gearWish(r) {
+  return Object.keys(GEAR).filter((id) => {
+    const g = GEAR[id], cur = r.gear[g.slot];
+    return g.roles.includes(r.role) && cur !== id && (!cur || GEAR[cur].price < g.price) && gearPrice(id) <= r.wallet;
+  });
+}
+
 const treatCost = (r) => (maxHp(r) - r.hp) * 20;
-const repairCost = (r) => (armorMax(r) - r.armor) * 40;
+const repairCost = (r) => Math.round((armorMax(r) - r.armor) * 40 * World.repairMultiplier());
 const THERAPY_COST = 600;
 function treat(r) {
   const c = treatCost(r);

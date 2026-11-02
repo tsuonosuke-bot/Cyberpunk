@@ -1,7 +1,7 @@
 /* FIXER'S CUT — 画面と操作 */
 
 const UI = {
-  tab: 'home', job: null, route: 0, team: {}, doc: null, ask: null,
+  tab: 'home', job: null, route: 0, team: {}, doc: null, shop: null, ask: null,
   toast: '', toastT: 0, flow: null, modalKey: '', timer: 0, play: null, est: { key: '', val: null },
 };
 const LANE = { field: '現場', support: '支援', net: 'ネット' };
@@ -15,7 +15,7 @@ const PREF_KEY = 'fixers-cut-prefs-v1';
 const LOG_SPEED = { slow: ['ゆっくり', 320], normal: ['ふつう', 170], fast: ['速く', 60], instant: ['一瞬', 0] };
 const prefs = loadPrefs();
 function loadPrefs() {
-  const p = { speed: 'normal' };
+  const p = { speed: 'normal', hints: true };
   try { Object.assign(p, JSON.parse(localStorage.getItem(PREF_KEY) || '{}')); } catch (e) { /* 読めない環境では既定値 */ }
   if (!LOG_SPEED[p.speed]) p.speed = 'normal';
   return p;
@@ -24,6 +24,9 @@ function savePrefs() {
   try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* 保存できない環境では無視 */ }
 }
 const instantLog = () => reduced || prefs.speed === 'instant';
+/* 初めての人向けの説明（.hint）は、隠れ家上部のボタンでまとめて隠せる */
+const applyHints = () => document.body.classList.toggle('no-hints', !prefs.hints);
+const hintButton = () => `<button data-act="hints" aria-pressed="${prefs.hints}" title="初めての人向けの説明を表示する">説明 ${prefs.hints ? 'オン' : 'オフ'}</button>`;
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const cr = (n) => `${n < 0 ? '−' : ''}${fmt(Math.abs(n))}cr`;
@@ -70,13 +73,15 @@ function bars(r) {
 
 function perkLine(r) {
   const p = ROLES[r.role].perk;
-  if (r.perk) return `<div class="perk on"><span class="label">技能</span> ${p.name}：${p.desc}</div>`;
+  if (r.perk) return `<div class="perk on"><span class="label">技能</span> ${p.name}：${p.desc}${r.perkUses ? ` <span class="num">（これまでに${r.perkUses}回効いた）</span>` : ''}</div>`;
   return `<div class="perk"><span class="label">技能</span> 格上（R2以上）の成功 <span class="num">${Math.min(r.elite, 3)}/3</span> で「${p.name}」</div>`;
 }
 
 function runnerCard(r, mode, idx) {
   const R = ROLES[r.role];
-  const skills = SKILLS.filter((k) => skill(r, k) > 0).map((k) => `<span>${k}<b class="num">${skill(r, k)}</b></span>`).join('');
+  const xpOf = (k) => (r.skills[k] || 0) >= SKILL_CAP ? 1 : ((r.xp || {})[k] || 0) / xpNeed(r.skills[k] || 0);
+  const skills = SKILLS.filter((k) => skill(r, k) > 0).map((k) => `<span title="次の上昇まで ${Math.round(xpOf(k) * 100)}%">${k}<b class="num">${skill(r, k)}</b>${mode === 'scout' ? '' : `<i class="xp"><i style="width:${Math.round(xpOf(k) * 100)}%"></i></i>`}</span>`).join('');
+  const gear = Object.values(r.gear || {}).filter((id) => GEAR[id]);
   let contract = '', actions = '';
   if (mode === 'roster') {
     contract = r.contract === 'exclusive'
@@ -111,6 +116,7 @@ function runnerCard(r, mode, idx) {
     <div class="stats">${STATS.map((k) => `<span><i>${k}</i><b class="num">${stat(r, k)}</b></span>`).join('')}</div>
     <div class="skills">${skills}</div>
     ${r.cyber.length ? `<div class="cy"><span class="label">義体</span> ${r.cyber.map((c) => CYBER[c].name).join('、')}</div>` : ''}
+    ${gear.length ? `<div class="cy"><span class="label">装備</span> ${gear.map((id) => GEAR[id].name).join('、')}</div>` : ''}
     ${mode === 'roster' ? perkLine(r) + World.perkHtml(r) : ''}
     ${contract}
     ${actions}
@@ -120,12 +126,12 @@ function runnerCard(r, mode, idx) {
 /* ───────── 上部・下部 ───────── */
 
 function hud() {
-  const tabs = [['home', '隠れ家'], ['scout', 'スカウト'], ['board', '依頼盤'], ['doc', '闇医者'], ['log', '記録']];
+  const tabs = [['home', '隠れ家'], ['scout', 'スカウト'], ['board', '依頼盤'], ['shop', '装備・設備'], ['doc', '闇医者'], ['log', '記録']];
   const badge = { scout: G.scouts.length, board: G.board.length };
   const next = G.rank < 3 ? RANK_CRED[G.rank] : null;
   return `<header class="hud"><div class="hud-in">
     <div class="brand"><span class="logo">FIXER'S CUT</span><span class="label">YOMIHAMA ・ 第${G.chapter}章</span></div>
-    <dl class="hud-stats">
+    ${hintButton()}<dl class="hud-stats">
       <div><dt class="label">夜</dt><dd class="num">${G.night}</dd></div>
       <div class="${G.money < 0 ? 'neg' : ''}"><dt class="label">所持金</dt><dd class="num">${cr(G.money)}${G.negStreak ? ` <span class="chip p">赤字 ${G.negStreak}/3</span>` : ''}</dd></div>
       <div><dt class="label">評判</dt><dd>R${G.rank} ${RANK_NAME[G.rank]} <span class="num dim">${G.cred}${next ? `/${next}` : ''}</span></dd></div>
@@ -173,12 +179,13 @@ function viewHome() {
       return `<li><b>${esc(m.job.title)}</b><span>${m.job.routes[m.routeIdx].name} ・ ${names}</span><span class="num dim">${k}/${m.job.nights}夜目${m.result ? '' : '（今夜出発）'}</span>${m.result ? '' : `<button class="sm" data-act="recall" data-v="${m.uid}">取り消す</button>`}</li>`;
     }).join('')
     : '<li class="dim">今夜はまだ誰も出ていません。依頼盤から送り出せます。</li>';
-  const tut = G.chapter === 1 && G.night <= 3 ? `<section class="panel tut"><h3>はじめての夜</h3><ol>
+  const tut = G.chapter === 1 && G.night <= 3 ? `<section class="panel tut hint"><h3>はじめての夜</h3><ol>
       <li><b>スカウト</b>で候補を雇う。歩合は毎晩の支払いがないかわりに、分け前が本人のものになる</li>
       <li><b>依頼盤</b>で依頼を選び、ルートを決める。お金に余裕があれば情報を買って「???」を開ける</li>
       <li>ランナーを<b>現場・支援・ネット</b>の枠に入れて送り出す。必須ロールを満たすこと</li>
       <li><b>夜を明かす</b>。通信で判定の結果が届き、そのあと家賃や手当が引かれる</li>
-    </ol><p class="dim">所持金が3夜続けてマイナスになると廃業です。</p></section>` : '';
+      <li>使った技能は少しずつ伸びる。<b>装備・設備</b>で人間性を削らずに強くもできる</li>
+    </ol><p class="dim">所持金が3夜続けてマイナスになると廃業です。この説明は右上の「説明」ボタンで隠せます。</p></section>` : '';
   return `
   <section class="chapter">
     <div class="label">MAIN ・ ブラックボックス</div>
@@ -195,7 +202,7 @@ function viewHome() {
       <div class="tot"><dt>合計</dt><dd class="num">${fmt(up.reduce((a, b) => a + b[1], 0))}cr</dd></div></dl>
       ${G.vouchers.cyber || G.vouchers.intel ? `<p class="dim">手持ちの券：${G.vouchers.cyber ? `義体半額 ×${G.vouchers.cyber}　` : ''}${G.vouchers.intel ? `情報無料 ×${G.vouchers.intel}` : ''}</p>` : ''}
     </section>
-    <section class="panel"><h3>ヒート</h3>
+    <section class="panel hint"><h3>ヒート</h3>
       <div class="heatlist">${CORPS.map((c) => `<div class="hrow ${G.heat[c] >= 80 ? 'hot' : ''}"><span>${CLIENTS[c].name}</span><div class="ht"><i style="width:${G.heat[c]}%"></i></div><b class="num">${G.heat[c]}</b></div>`).join('')}</div>
       <p class="dim">企業の依頼を受けると、ほかの企業のヒートが上がります。標的にした企業はさらに上がります。100に達すると隠れ家が襲撃され、待機中のランナーで防衛します。${G.chapter >= 4 ? '<span class="pink">第4章からは毎夜+3。</span>' : '手を出さなかった企業は、毎夜1ずつ冷めます。'}</p>
     </section>
@@ -212,7 +219,7 @@ function viewHome() {
 function viewScout() {
   return `<section>
     <h2 class="sec">スカウト <span class="label">今夜の候補</span></h2>
-    <p class="lead">候補は毎晩入れ替わります。<b>歩合</b>は毎晩の支払いがなく、分け前は本人のもの。忠誠は上がらず、不満がたまると引き抜かれます。<b>専属</b>は待機中も手当がかかるかわりに、分け前がフィクサーに入り、義体のローンも立て替えられます。</p>
+    <p class="lead hint">候補は毎晩入れ替わります。<b>歩合</b>は毎晩の支払いがなく、分け前は本人のもの。忠誠は上がらず、不満がたまると引き抜かれます。<b>専属</b>は待機中も手当がかかるかわりに、分け前がフィクサーに入り、義体のローンも立て替えられます。</p>
     <p class="dim">抱えているランナー ${G.runners.length}/${ROSTER_MAX}人</p>
     <div class="runners">${G.scouts.map((r, i) => runnerCard(r, 'scout', i)).join('') || '<p class="dim">今夜の候補はもういません。</p>'}</div>
   </section>`;
@@ -259,7 +266,7 @@ function phaseTable(job, ri) {
     ${hasNet ? `<div class="lane">ネット</div>${r.net.map((p, i) => phaseCell(p, i, job)).join('')}` : ''}
     ${len > 5 ? '<div></div><div class="nightlbl">1夜目</div><div class="nightlbl">2夜目</div>' : ''}
   </div></div>
-  <ul class="legend">${legend}${hasNet ? '' : '<li class="dim">この依頼にネットのフェーズはありません</li>'}</ul>`;
+  <ul class="legend hint">${legend}${hasNet ? '' : '<li class="dim">この依頼にネットのフェーズはありません</li>'}</ul>`;
 }
 
 function getTeam(uid) {
@@ -275,7 +282,7 @@ function laneOf(team, id) {
 function formation(job, team) {
   const lane = (k) => `<div class="slot"><span class="label">${LANE[k]} ${team[k].length}/${LANE_MAX[k]}</span>
     <div class="who">${team[k].map((id) => `<span>${esc(getR(id).name)}</span>`).join('') || '<span class="dim">—</span>'}</div>
-    <small>${{ field: '交戦・隠密・罠・扉', support: '運転・逃走・手当て。交戦には出ない', net: 'ICE。ネットランナーだけ' }[k]}</small></div>`;
+    <small class="hint">${{ field: '交戦・隠密・罠・扉', support: '運転・逃走・手当て。交戦には出ない', net: 'ICE。ネットランナーだけ' }[k]}</small></div>`;
   const all = teamIds(team).map(getR);
   const req = job.req.map((role) => {
     const ok = role === 'net' ? team.net.length > 0 : all.some((r) => r.role === role);
@@ -301,11 +308,17 @@ function estBox(job, team) {
   if (!team.field.length) return '<div class="est empty"><span class="dim">現場に1人以上入れると、成功の見込みが出ます。</span></div>';
   const key = `${job.uid}|${UI.route}|${job.intel}|${JSON.stringify(team)}|${teamIds(team).map((id) => { const r = getR(id); return r.hp + '.' + r.armor + '.' + r.cyber.length; }).join(',')}`;
   if (UI.est.key !== key) UI.est = { key, val: estimate(job, UI.route, team) };
-  const { p, death } = UI.est.val;
+  const { p, death, skills, causes } = UI.est.val;
+  const pct = (x) => `${Math.round(x * 100)}%`;
+  const band = (x) => (x >= 0.85 ? 'hi' : x >= 0.6 ? 'mid' : 'lo');
+  const rows = skills.map((x) => `<li class="${band(x.p)}"><span>${x.sk === '回避' ? '回避<small class="dim">被弾</small>' : x.sk}<small class="dim">${esc(x.who)}</small></span><i class="meter"><i style="width:${pct(x.p)}"></i></i><b class="num">${pct(x.p)}</b><small class="dim num">${x.per >= 1 ? `×${Math.round(x.per)}` : ''}</small></li>`).join('');
+  const why = causes.filter((c) => c.p >= 0.03).map((c) => `<li>${esc(c.reason)} <b class="num">${pct(c.p)}</b></li>`).join('');
   return `<div class="est">
-    <div><span class="label">成功の見込み</span><b class="num">${Math.round(p * 100)}%</b></div>
-    <div><span class="label">誰かが死ぬ確率</span><b class="num ${death > 0.05 ? 'pink' : ''}">${Math.round(death * 100)}%</b></div>
+    <div><span class="label">成功の見込み</span><b class="num">${pct(p)}</b></div>
+    <div><span class="label">誰かが死ぬ確率</span><b class="num ${death > 0.05 ? 'pink' : ''}">${pct(death)}</b></div>
     <small>${job.intel ? '情報込みの見積もりです。' : 'まだ見えていない「???」は入っていない、甘めの見積もりです。'}</small>
+    ${rows ? `<div class="odds"><span class="label">判定ごとの成功率 ・ 担当</span><ul>${rows}</ul><small class="hint dim">低い判定ほど全体の足を引っぱります。技能が伸びる・装備を買う・担当を替えると上がります。</small></div>` : ''}
+    ${why ? `<div class="odds"><span class="label">失敗するとき</span><ul class="why">${why}</ul></div>` : ''}
   </div>`;
 }
 
@@ -362,7 +375,7 @@ function jobDetail(job) {
     ${phaseTable(job, UI.route)}
     <div class="intel">${job.intel
       ? '<span class="chip b">情報済</span> 情報屋から聞いた中身が表に出ています。'
-      : `<button data-act="intel" data-v="${job.uid}">情報を買う（${cost ? cr(cost) : '無料'}）</button><small class="dim">全ルートの「???」が開き、見積もりにも入ります${G.runners.some((r) => r.contact === job.client) ? '。依頼主に顔が利くので半額' : ''}</small>`}</div>
+      : `<button data-act="intel" data-v="${job.uid}">情報を買う（${cost ? cr(cost) : '無料'}）</button><small class="dim hint">全ルートの「???」が開き、見積もりにも入ります${G.runners.some((r) => r.contact === job.client) ? '。依頼主に顔が利くので半額' : ''}</small>`}</div>
     <h3>編成</h3>
     ${formation(job, team)}
     ${estBox(job, team)}
@@ -380,6 +393,37 @@ function viewBoard() {
     <section class="jobs"><h2 class="sec">依頼盤 <span class="label">${G.board.length}件</span></h2>${G.board.map(jobCard).join('')}</section>
     <section class="detail">${jobDetail(job)}</section>
   </div>`;
+}
+
+/* ───────── 装備・設備 ───────── */
+
+function viewShop() {
+  let r = getR(UI.shop) || G.runners[0];
+  const gear = r ? (() => {
+    UI.shop = r.id;
+    const pays = r.contract === 'exclusive' ? 'fixer' : 'wallet';
+    const purse = pays === 'fixer' ? G.money : r.wallet;
+    const slots = Object.entries(GEAR_SLOTS).map(([slot, name]) => {
+      const cur = r.gear[slot];
+      const items = Object.keys(GEAR).filter((id) => GEAR[id].slot === slot).map((id) => {
+        const g = GEAR[id], owned = cur === id, rec = g.roles.includes(r.role);
+        const price = gearPrice(id), refund = cur && !owned ? gearRefund(cur) : 0;
+        return `<div class="cw gear ${rec ? 'rec' : ''} ${owned ? 'owned' : ''}">
+          <div class="cwh"><b>${g.name}</b>${rec ? '<span class="chip b">相性</span>' : ''}</div>
+          <p>${g.desc}</p>
+          <div class="actions"><span class="num">${fmt(price)}cr</span>${owned ? '<small class="dim">装備中</small>'
+            : `<button data-act="gear" data-r="${r.id}" data-v="${id}" ${r.status === 'mission' || price > purse ? 'disabled' : ''}>${cur ? '入れ替える' : '買う'}</button>${refund ? `<small class="dim">下取り +${fmt(refund)}</small>` : ''}`}</div>
+        </div>`;
+      }).join('');
+      return `<h4 class="slot-h">${name} <span class="dim">${cur ? `装備中：${GEAR[cur].name}` : 'なし'}</span></h4><div class="cws">${items}</div>`;
+    }).join('');
+    return `<div class="chips" role="group" aria-label="装備を買うランナー">${G.runners.map((x) => `<button data-act="shop" data-v="${x.id}" aria-pressed="${x.id === r.id}">${esc(x.name)}<small class="dim"> ${ROLES[x.role].tag}</small></button>`).join('')}</div>
+      <div class="docwrap"><div class="docside">${runnerCard(r, 'doc')}</div>
+      <div class="catalog"><h3>装備 <span class="label">人間性を削らずに伸ばす</span></h3>
+        <p class="dim">${pays === 'fixer' ? `専属なので、フィクサーの所持金（${cr(G.money)}）で買います。` : `歩合なので、${esc(r.name)}の手持ち（${cr(r.wallet)}）で買います。歩合のランナーは、手持ちがあれば自分でも買います。`}${World.level('armory') ? ' <span class="chip b">武器庫：2割引</span>' : ''}</p>
+        ${slots}</div></div>`;
+  })() : '<p class="dim">装備を持たせるランナーがいません。</p>';
+  return `<section><h2 class="sec">装備 <span class="label">ARMS DEALER</span></h2>${gear}</section>${World.upgradesHtml()}`;
 }
 
 /* ───────── 闇医者 ───────── */
@@ -432,7 +476,7 @@ function viewDoc() {
       </div>
       <div class="catalog">
         <h3>義体 <span class="label">能力は経験より義体で伸びる</span></h3>
-        <p class="dim">${r.contract === 'exclusive' ? '専属なので、ローンを立て替えられます。ローンは契約を切っても残ります。' : '歩合のランナーには立て替えられません。本人の手持ちで払います。'}${half ? ' <span class="chip b">割引券あり：半額</span>' : ''}</p>
+        <p class="dim hint">${r.contract === 'exclusive' ? '専属なので、ローンを立て替えられます。ローンは契約を切っても残ります。' : '歩合のランナーには立て替えられません。本人の手持ちで払います。'}${half ? ' <span class="chip b">割引券あり：半額</span>' : ''}</p>
         <div class="cws">${cat}</div>
       </div>
     </div>
@@ -509,6 +553,8 @@ function stepSettle(s) {
       ${heat ? `<div><dt>ヒート</dt><dd class="num pink">${heat}</dd></div>` : ''}
     </dl>
     ${s.deaths.length ? `<p class="dead">帰ってこなかった：${s.deaths.map(esc).join('、')}</p>` : ''}
+    ${s.credits && s.credits.length ? `<h3>効いたもの <span class="label">失敗を成功に変えた回数</span></h3><ul class="credits">${s.credits.map((c) => `<li><b>${esc(c.name)}</b>　${esc(c.label)} <span class="num">×${c.n}</span></li>`).join('')}</ul>` : ''}
+    ${s.growth && s.growth.length ? `<h3>成長</h3><ul class="growth">${s.growth.map((g) => `<li>${esc(g)}</li>`).join('')}</ul>` : ''}
     ${s.notes.length ? `<ul class="notes">${s.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
     ${b ? `<h3>追加報酬を1つ選ぶ</h3><div class="bonus">${b.opts.map((o, i) => `<button data-act="bonus" data-v="${i}"><span class="label">${o.title}</span>${o.text}</button>`).join('')}</div>`
       : '<div class="mact"><button class="primary" data-act="next">次へ</button></div>'}`;
@@ -682,6 +728,7 @@ function renderTitle() {
         <li>判定は 能力値＋技能＋d10。難易度（DV）以上なら成功。10が出たらd10を足し、1が出たらd10を引く</li>
         <li>ダメージから防具の値を引いた分だけHPが減り、防具は1ずつすり減る</li>
         <li>HPが半分を切ると重傷になり、全判定に−2</li>
+        <li>判定に使った技能は経験がたまり、少しずつ上がる。装備は人間性を削らずに技能を足せる</li>
         <li>HP0で死亡セーブ。d10がBODY未満なら生存。ラザロ加入者は1回だけ回収される</li>
         <li>現場とネットの2レーンが並んで進む。ネットで負けると、現場の難易度が上がる</li>
       </ul>
@@ -722,7 +769,7 @@ function render() {
   if (!G) return renderTitle();
   if (G.ended && !UI.flow) return renderEnding();
   City.setMode(UI.tab === 'home' ? 'full' : 'dim');
-  const views = { home: viewHome, scout: viewScout, board: viewBoard, doc: viewDoc, log: viewLog };
+  const views = { home: viewHome, scout: viewScout, board: viewBoard, shop: viewShop, doc: viewDoc, log: viewLog };
   app.innerHTML = hud() + `<main class="view view-${UI.tab}">${views[UI.tab]()}</main>` + dock();
   renderModal();
 }
@@ -779,6 +826,12 @@ const H_ = {
   askfire(b) { UI.ask = 'fire' + b.dataset.r; render(); },
   fire(b) { UI.ask = null; act(() => fire(getR(+b.dataset.r))); },
   doc(b) { UI.doc = +b.dataset.v; render(); },
+  shop(b) { UI.shop = +b.dataset.v; render(); },
+  gear(b) {
+    const r = getR(+b.dataset.r), id = b.dataset.v;
+    act(() => buyGear(r, id) || (toast(`${r.name}に「${GEAR[id].name}」を持たせた（${GEAR[id].desc}）`), null));
+  },
+  hints() { prefs.hints = !prefs.hints; savePrefs(); applyHints(); render(); },
   treat(b) { act(() => treat(getR(+b.dataset.r))); },
   repair(b) { act(() => repair(getR(+b.dataset.r))); },
   therapy(b) { act(() => therapy(getR(+b.dataset.r))); },
@@ -840,6 +893,7 @@ document.addEventListener('click', (e) => {
 
 function boot(data) {
   City.init();
+  applyHints();
   if (data && data.G) {
     G = World.init(data.G);
     Object.assign(UI, data.UI || {});
