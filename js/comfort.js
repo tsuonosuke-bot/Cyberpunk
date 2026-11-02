@@ -1,4 +1,4 @@
-/* FIXER'S CUT — 編成の再利用・通信の速度・合成効果音 */
+/* FIXER'S CUT — 編成の再利用・合成効果音。ui.js より先に読み込む（描画が Comfort を使う） */
 const Comfort = (() => {
   const SOUND_KEY = 'fixers-cut-sound';
   const read = (key, fallback) => { try { return localStorage.getItem(key) || fallback; } catch (_) { return fallback; } };
@@ -65,53 +65,3 @@ const Comfort = (() => {
     toggleSound() { sound = !sound; write(SOUND_KEY, sound ? 'on' : 'off'); unlockAudio(); },
   };
 })();
-
-const comfortValidateTeam = validateTeam;
-validateTeam = function(job, team) {
-  if (!team || !['field', 'support', 'net'].every(k => Array.isArray(team[k]))) return ['編成が正しくありません'];
-  const ids = teamIds(team), errors = [];
-  if (new Set(ids).size !== ids.length) errors.push('同じランナーを複数の枠には入れられません');
-  if (ids.some(id => !getR(id))) errors.push('離脱済みのランナーが含まれています');
-  for (const lane of ['field', 'support', 'net']) if (team[lane].length > LANE_MAX[lane]) errors.push(`${LANE[lane]}の枠が上限を超えています`);
-  if (team.net.some(id => getR(id) && getR(id).role !== 'net')) errors.push('ネット枠にはネットランナーが必要です');
-  return errors.concat(comfortValidateTeam(job, team));
-};
-const comfortDispatch = dispatch;
-dispatch = function(uid, routeIdx, team) {
-  const err = comfortDispatch(uid, routeIdx, team);
-  if (!err) G.lastTeam = clone(team);
-  return err;
-};
-const comfortFormation = formation;
-formation = function(job, team) {
-  return `<div class="actions"><button data-act="usualTeam" data-v="${job.uid}" ${G.lastTeam ? '' : 'disabled'}>いつもの面子</button></div>` + comfortFormation(job, team);
-};
-const comfortHud = hud;
-hud = function() { return comfortHud().replace('<dl class="hud-stats">', Comfort.soundButton() + '<dl class="hud-stats">'); };
-const comfortStepComm = stepComm;
-stepComm = function(c) { return Comfort.soundButton() + comfortStepComm(c); };
-// markStrip は通常再生で一行ずつ呼ばれる。全表示時の final=true は無音。
-const comfortMarkStrip = markStrip;
-markStrip = function(line, final) {
-  comfortMarkStrip(line, final);
-  if (line && !final) Comfort.tone(line);
-};
-H_.usualTeam = function(b) {
-  const job = G.board.find(j => j.uid === +b.dataset.v);
-  if (!job) return;
-  toast(Comfort.restoreTeam(job)); render();
-};
-H_.sound = function() {
-  Comfort.toggleSound();
-  // 通信の再描画を避け、表示済みの行と現在の判断を保つ。
-  const buttons = document.querySelectorAll('[data-act="sound"]');
-  const holder = document.createElement('div'); holder.innerHTML = Comfort.soundButton();
-  buttons.forEach(b => { b.textContent = holder.firstElementChild.textContent; b.setAttribute('aria-pressed', holder.firstElementChild.getAttribute('aria-pressed')); });
-};
-const comfortNext = H_.next;
-H_.next = function() {
-  const box = modal.querySelector('.log.play');
-  if (box && [...box.querySelectorAll('.ln')].some(l => !l.classList.contains('on'))) { H_.skiplog(); return; }
-  comfortNext();
-};
-

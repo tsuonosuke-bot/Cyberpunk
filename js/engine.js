@@ -5,9 +5,12 @@ const RENT = 200;
 const LAZARUS_FEE = 100;
 const BROKER_RATE = 0.2;
 const ROSTER_MAX = 8;
+const LANE = { field: '現場', support: '支援', net: 'ネット' };
+const LANE_MAX = { field: 3, support: 2, net: 1 };
+/* 通常兵の基準値。ランク2の依頼は交戦ごとに enemyDV を持つ（data.js） */
 const RANK_ENEMY = {
-  1: { dv: 13, atk: 14, dice: 2, plus: 1 },
-  2: { dv: 16, atk: 16, dice: 3, plus: 3 },
+  1: { dv: 17, atk: 16, dice: 3, plus: 2 },
+  2: { dv: 18, atk: 16, dice: 3, plus: 3 },
   3: { dv: 17, atk: 16, dice: 4, plus: 3 },
 };
 const ROLE_CYBER = {
@@ -256,7 +259,12 @@ function refreshBoard(specialsOnly) {
 const teamIds = (t) => [...t.field, ...t.support, ...t.net];
 
 function validateTeam(job, team) {
-  const errs = [];
+  if (!team || !['field', 'support', 'net'].every((k) => Array.isArray(team[k]))) return ['編成が正しくありません'];
+  const errs = [], ids = teamIds(team);
+  if (new Set(ids).size !== ids.length) errs.push('同じランナーを複数の枠には入れられません');
+  if (ids.some((id) => !getR(id))) errs.push('離脱済みのランナーが含まれています');
+  for (const lane of ['field', 'support', 'net']) if (team[lane].length > LANE_MAX[lane]) errs.push(`${LANE[lane]}の枠が上限を超えています`);
+  if (team.net.some((id) => getR(id) && getR(id).role !== 'net')) errs.push('ネット枠にはネットランナーが必要です');
   if(job.runnerId && !teamIds(team).includes(job.runnerId)) errs.push('個人依頼には本人の参加が必要です');
   if (!team.field.length) errs.push('現場に1人以上必要です');
   const all = teamIds(team).map(getR).filter(Boolean);
@@ -347,6 +355,7 @@ function dispatch(uid, routeIdx, team) {
   G.board = G.board.filter((j) => j !== job);
   for (const id of teamIds(team)) getR(id).status = 'mission';
   G.missions.push({ uid, job, routeIdx, team: clone(team), start: G.night, result: null });
+  G.lastTeam = clone(team);
   return null;
 }
 function recall(uid) {

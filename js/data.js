@@ -133,7 +133,7 @@ const _ = null;
 const H = (p) => Object.assign(p, { hidden: true });
 const S = (dv, l) => ({ t: 'sneak', dv, l });
 const T = (dv, l) => ({ t: 'trap', dv, l });
-const C = (n, l, enemyType = 'standard') => ({ t: 'combat', n, l, enemyType });
+const C = (n, l, enemyType = 'standard', enemyDV) => ({ t: 'combat', n, l, enemyType, ...(enemyDV ? { enemyDV } : {}) });
 const R = (l) => ({ t: 'rest', l });
 const GT = (dv, l) => ({ t: 'gate', dv, l });
 const O = (l) => ({ t: 'goal', l });
@@ -161,109 +161,109 @@ const RANK_NAME = { 1: '路地裏', 2: '港湾', 3: '上層' };
 const JOBS = [
   /* ── 評判ランク1 ── */
   {
-    id: 'r1_delivery', rank: 1, title: '屋台街から港湾倉庫へ荷を運ぶ', client: 'resident', target: null,
+    id: 'r1_delivery', rank: 1, district: 'harbor', title: '屋台街から港湾倉庫へ荷を運ぶ', client: 'resident', target: null,
     nights: 1, payout: 2000, cred: 4, heat: 0, req: [],
     desc: '中身は聞かない約束の小包。白蛇会の縄張りを抜けて届ける。',
     routes: [
-      { name: '表通り', note: '検問はあるが見通しがいい', field: [D(13, '検問'), _, C(1, 'チンピラ'), _, O('受け渡し')], net: N5() },
-      { name: '裏路地', note: '近道。誰の縄張りかは曖昧', field: [S(13, '裏路地'), H(C(2, '白蛇会の見張り')), _, _, O('受け渡し')], net: N5() },
+      { name: '表通り', note: '検問はあるが見通しがいい', field: [D(15, '検問'), _, C(1, 'チンピラ'), _, O('受け渡し')], net: N5() },
+      { name: '裏路地', note: '近道。誰の縄張りかは曖昧', field: [S(15, '裏路地'), H(C(2, '白蛇会の見張り')), _, _, O('受け渡し')], net: N5() },
     ],
   },
   {
-    id: 'r1_collect', rank: 1, title: '白蛇会の取り立てを代行する', client: 'gang', target: null,
+    id: 'r1_collect', rank: 1, district: 'street', title: '白蛇会の取り立てを代行する', client: 'gang', target: null,
     nights: 1, payout: 2400, cred: 4, heat: 0, req: [],
     desc: '払いの滞った闇カジノから、上がりを回収してくる。',
     routes: [
-      { name: '正面', note: '話がこじれれば殴り合い', field: [K(13, '支配人と交渉'), _, H(C(2, '用心棒')), _, O('金庫から回収')], net: N5() },
-      { name: '裏口', note: '警報線が張ってあるという噂', field: [S(13, '裏口'), H(T(13, '警報線')), C(1, '番犬'), _, O('金庫から回収')], net: N5() },
+      { name: '正面', note: '話がこじれれば殴り合い', field: [K(15, '支配人と交渉'), _, H(C(2, '用心棒')), _, O('金庫から回収')], net: N5() },
+      { name: '裏口', note: '警報線が張ってあるという噂', field: [S(15, '裏口'), H(T(15, '警報線')), C(1, '番犬'), _, O('金庫から回収')], net: N5() },
     ],
   },
   {
-    id: 'r1_watch', rank: 1, title: '屋台街の夜警', client: 'resident', target: null,
+    id: 'r1_watch', rank: 1, district: 'street', title: '屋台街の夜警', client: 'resident', target: null,
     nights: 1, payout: 1800, cred: 3, heat: 0, req: [],
     desc: '最近、屋台を荒らす強盗がいる。朝まで店を守ってほしい。',
     routes: [
       { name: '見回り', note: '歩き回って数を減らす', field: [_, C(2, '強盗'), R('屋台の裏で休憩'), H(C(2, '強盗の仲間')), O('朝まで守る')], net: N5() },
-      { name: '待ち伏せ', note: '来るのを待って一度に叩く', field: [S(13, '物陰に潜む'), _, H(C(3, '強盗団')), _, O('朝まで守る')], net: N5() },
+      { name: '待ち伏せ', note: '来るのを待って一度に叩く', field: [S(15, '物陰に潜む'), _, H(C(3, '強盗団')), _, O('朝まで守る')], net: N5() },
     ],
   },
   {
-    id: 'r1_cargo', rank: 1, title: 'ミツカネの積み荷を取り返す', client: 'mitsukane', target: null,
+    id: 'r1_cargo', rank: 1, district: 'harbor', title: 'ミツカネの積み荷を取り返す', client: 'mitsukane', target: null,
     nights: 1, payout: 2600, cred: 4, heat: 0, req: ['driver'],
     desc: '港で密輸屋に抜かれた部品箱。警察沙汰にはしたくないらしい。',
     routes: [
-      { name: '倉庫街', note: '密輸屋の溜まり場を通る', field: [S(13, '倉庫街'), C(2, '密輸屋'), _, O('積み荷'), E(13, '逃走')], net: N5() },
-      { name: '水路', note: '船で裏から近づく', field: [D(13, '水路'), H(T(13, '浮遊機雷')), _, O('積み荷'), E(13, '逃走')], net: N5() },
+      { name: '倉庫街', note: '密輸屋の溜まり場を通る', field: [S(15, '倉庫街'), C(2, '密輸屋'), _, O('積み荷'), E(15, '逃走')], net: N5() },
+      { name: '水路', note: '船で裏から近づく', field: [D(15, '水路'), H(T(15, '浮遊機雷')), _, O('積み荷'), E(15, '逃走')], net: N5() },
     ],
   },
   {
-    id: 'r1_relay', rank: 1, title: 'ヴェルデの監視網に中継器を仕込む', client: 'hakurou', target: 'verde',
+    id: 'r1_relay', rank: 1, district: 'street', title: 'ヴェルデの監視網に中継器を仕込む', client: 'hakurou', target: 'verde',
     nights: 1, payout: 2400, cred: 4, heat: 6, req: ['net'],
     desc: 'ハクロウ通信の下請け。製薬工場の外周カメラに穴をあける。',
     routes: [
-      { name: '外周フェンス', note: 'カメラの死角を縫う', field: [S(13, 'フェンス越え'), _, H(C(1, '巡回警備')), O('中継器を設置'), _], net: [_, I(13, 'カメラ網', 'cam'), _, I(13, '中継器の接続', 'data'), _] },
-      { name: '下水道', note: '人目はないが空気が悪い', field: [_, H(T(13, 'ガス溜まり')), _, O('中継器を設置'), S(13, '撤収')], net: [I(13, 'センサー網', 'trace'), _, _, I(13, '中継器の接続', 'data'), _] },
+      { name: '外周フェンス', note: 'カメラの死角を縫う', field: [S(15, 'フェンス越え'), _, H(C(1, '巡回警備')), O('中継器を設置'), _], net: [_, I(15, 'カメラ網', 'cam'), _, I(15, '中継器の接続', 'data'), _] },
+      { name: '下水道', note: '人目はないが空気が悪い', field: [_, H(T(15, 'ガス溜まり')), _, O('中継器を設置'), S(15, '撤収')], net: [I(15, 'センサー網', 'trace'), _, _, I(15, '中継器の接続', 'data'), _] },
     ],
   },
   {
-    id: 'r1_escort', rank: 1, title: 'ミツカネの技術者を送り届ける', client: 'mitsukane', target: null,
+    id: 'r1_escort', rank: 1, district: 'harbor', title: 'ミツカネの技術者を送り届ける', client: 'mitsukane', target: null,
     nights: 1, payout: 2600, cred: 4, heat: 0, req: [],
     desc: '転勤する技術者を湾岸の社宅まで。狙われる心当たりはないと本人は言う。',
     routes: [
-      { name: '湾岸道路', note: '速いが目立つ', field: [D(13, '渋滞の湾岸道路'), H(C(2, '襲撃者')), _, C(1, 'バイク乗り'), O('送り届ける')], net: N5() },
-      { name: '旧市街', note: '遅いが隠れやすい', field: [S(13, '旧市街'), _, R('セーフハウス'), H(C(2, '狙撃手と相棒')), O('送り届ける')], net: N5() },
+      { name: '湾岸道路', note: '速いが目立つ', field: [D(15, '渋滞の湾岸道路'), H(C(2, '襲撃者')), _, C(1, 'バイク乗り'), O('送り届ける')], net: N5() },
+      { name: '旧市街', note: '遅いが隠れやすい', field: [S(15, '旧市街'), _, R('セーフハウス'), H(C(2, '狙撃手と相棒')), O('送り届ける')], net: N5() },
     ],
   },
 
   /* ── 評判ランク2 ── */
   {
-    id: 'r2_sample', rank: 2, title: 'ヴェルデ製薬の冷蔵倉庫からサンプルを回収する', client: 'mitsukane', target: 'verde',
+    id: 'r2_sample', rank: 2, district: 'harbor', title: 'ヴェルデ製薬の冷蔵倉庫からサンプルを回収する', client: 'mitsukane', target: 'verde',
     nights: 2, payout: 8000, cred: 7, heat: 12, req: ['net', 'tech', 'driver'],
     desc: '港湾倉庫の地下にある冷蔵庫から、試験中の義体用ジェルを一箱。',
     routes: [
       {
         name: '排水路', note: '情報屋いわく、警備の薄い裏道',
-        field: [S(13, '侵入'), _, C(2, '巡回'), _, H(T(13, 'センサー罠')), R('物陰で休息'), GT(15, '隔壁'), H(C(3, '警備ドローン')), O('保管庫'), E(15, '逃走')],
+        field: [S(13, '侵入'), _, C(2, '巡回', 'armored', 19), _, H(T(13, 'センサー罠')), R('物陰で休息'), GT(15, '隔壁'), H(C(3, '警備ドローン', 'sniper', 19)), O('保管庫'), E(15, '逃走')],
         net: [_, I(13, 'カメラ網', 'cam'), _, _, _, _, I(15, '隔壁制御', 'door'), _, H(I(17, '警報系', 'alarm')), _],
       },
       {
         name: '搬入口', note: '業者に化けて正面から入る',
-        field: [K(15, '偽の搬入業者'), H(C(2, '検品係の警備')), _, GT(13, '搬入ゲート'), _, C(3, '倉庫警備'), _, GT(15, '冷蔵庫'), O('保管庫'), E(15, '逃走')],
+        field: [K(15, '偽の搬入業者'), H(C(2, '検品係の警備', 'hacker', 19)), _, GT(13, '搬入ゲート'), _, C(3, '倉庫警備', 'swarm', 17), _, GT(15, '冷蔵庫'), O('保管庫'), E(15, '逃走')],
         net: [I(13, '入構記録', 'trace'), _, _, I(15, 'ゲート制御', 'door'), _, _, I(15, 'カメラ網', 'cam'), _, H(I(17, '警報系', 'alarm')), _],
       },
     ],
   },
   {
-    id: 'r2_defector', rank: 2, title: 'ヴェルデの研究者を亡命させる', client: 'hakurou', target: 'verde',
+    id: 'r2_defector', rank: 2, district: 'street', title: 'ヴェルデの研究者を亡命させる', client: 'hakurou', target: 'verde',
     nights: 1, payout: 6000, cred: 7, heat: 12, req: ['driver', 'med'],
     desc: '研究者本人は乗り気だが、体に追跡タグが埋めてある。',
     routes: [
-      { name: '研究棟', note: '夜勤明けを狙う', field: [S(15, '研究棟'), H(C(2, '私設警備')), K(13, '研究者を説得'), O('研究者を確保'), E(15, '逃走')], net: [I(13, 'カメラ網', 'cam'), _, _, H(I(15, '追跡タグ', 'trace')), _] },
-      { name: '往診', note: '医者を装って社宅を訪ねる', field: [M(13, '往診を装う'), H(T(15, '社宅の監視')), M(15, '追跡タグの摘出'), O('研究者を確保'), E(13, '逃走')], net: [_, I(13, '社宅の入館系', 'trace'), _, _, _] },
+      { name: '研究棟', note: '夜勤明けを狙う', field: [S(15, '研究棟'), H(C(2, '研究棟の狙撃班', 'sniper', 19)), K(13, '研究者を説得'), O('研究者を確保'), E(15, '逃走')], net: [I(13, 'カメラ網', 'cam'), _, _, H(I(15, '追跡タグ', 'trace')), _] },
+      { name: '往診', note: '医者を装って社宅を訪ねる', field: [M(13, '往診を装う'), H(C(2, '社宅の狙撃班', 'sniper', 21)), M(15, '追跡タグの摘出'), O('研究者を確保'), E(13, '逃走')], net: [_, I(13, '社宅の入館系', 'trace'), _, _, _] },
     ],
   },
   {
-    id: 'r2_datatheft', rank: 2, title: 'ハクロウ通信のサーバーからデータを抜く', client: 'verde', target: 'hakurou',
+    id: 'r2_datatheft', rank: 2, district: 'upper', title: 'ハクロウ通信のサーバーからデータを抜く', client: 'verde', target: 'hakurou',
     nights: 1, payout: 5500, cred: 7, heat: 12, req: ['net', 'tech'],
     desc: '物理的に端子を挿さないと届かない、隔離されたサーバー。',
     routes: [
-      { name: '通用口', note: '物理で入ってネットで抜く', field: [S(15, 'データセンター'), GT(15, 'サーバー室'), H(C(2, '警備')), O('物理接続'), E(13, '撤収')], net: [I(15, '外周ICE', 'trace'), _, I(15, 'カメラ網', 'cam'), I(17, 'データ金庫', 'data'), H(I(17, '黒ICE', 'alarm'))] },
-      { name: '屋上', note: '空調設備から降りる', field: [D(13, 'ドローンで屋上へ'), H(T(15, '赤外線網')), GT(13, '空調ダクト'), O('物理接続'), C(2, '駆けつけた警備')], net: [_, I(15, 'カメラ網', 'cam'), _, I(17, 'データ金庫', 'data'), _] },
+      { name: '通用口', note: '物理で入ってネットで抜く', field: [S(15, 'データセンター'), GT(15, 'サーバー室'), H(C(2, '警備', 'sniper', 20)), O('物理接続'), E(13, '撤収')], net: [I(15, '外周ICE', 'trace'), _, I(15, 'カメラ網', 'cam'), I(17, 'データ金庫', 'data'), H(I(17, '黒ICE', 'alarm'))] },
+      { name: '屋上', note: '空調設備から降りる', field: [D(13, 'ドローンで屋上へ'), H(T(15, '赤外線網')), GT(13, '空調ダクト'), O('物理接続'), C(2, '駆けつけた警備', 'hacker', 20)], net: [_, I(15, 'カメラ網', 'cam'), _, I(17, 'データ金庫', 'data'), _] },
     ],
   },
   {
-    id: 'r2_convoy', rank: 2, title: 'ミツカネの兵器輸送を護衛する', client: 'mitsukane', target: null,
+    id: 'r2_convoy', rank: 2, district: 'harbor', title: 'ミツカネの兵器輸送を護衛する', client: 'mitsukane', target: null,
     nights: 2, payout: 7000, cred: 7, heat: 0, req: ['driver', 'solo'],
     desc: '湾岸から内陸の倉庫まで、二晩かけて運ぶ。狙っている連中は多い。',
     routes: [
-      { name: '湾岸道路', note: '見通しがよく、待ち伏せもされやすい', field: [D(13, '湾岸道路'), _, H(C(3, '待ち伏せ')), _, R('中継地点'), D(15, '高架'), C(2, 'ドローン'), _, H(C(3, '白蛇会の襲撃')), O('引き渡し')], net: N10() },
-      { name: '旧線路', note: '廃線を走る。車は傷む', field: [D(15, '廃線'), H(T(13, '崩れた陸橋')), _, C(2, '線路の住人'), R('廃駅'), _, D(15, 'トンネル'), H(C(3, '先回りした襲撃者')), _, O('引き渡し')], net: N10() },
+      { name: '湾岸道路', note: '見通しがよく、待ち伏せもされやすい', field: [D(13, '湾岸道路'), _, H(C(3, '待ち伏せ', 'swarm', 17)), _, R('中継地点'), D(15, '高架'), C(2, 'ドローン', 'armored', 19), _, H(C(3, '白蛇会の襲撃', 'sniper', 19)), O('引き渡し')], net: N10() },
+      { name: '旧線路', note: '廃線を走る。車は傷む', field: [D(15, '廃線'), H(T(13, '崩れた陸橋')), _, C(2, '線路の住人', 'hacker', 21), R('廃駅'), _, D(15, 'トンネル'), H(C(3, '先回りした襲撃者', 'swarm', 17)), _, O('引き渡し')], net: N10() },
     ],
   },
 
   /* ── 評判ランク3 ── */
   {
-    id: 'r3_vault', rank: 3, title: '上層：ミツカネ重役の金庫を開ける', client: 'verde', target: 'mitsukane',
+    id: 'r3_vault', rank: 3, district: 'upper', title: '上層：ミツカネ重役の金庫を開ける', client: 'verde', target: 'mitsukane',
     nights: 2, payout: 16000, cred: 12, heat: 20, req: ['net', 'tech', 'driver', 'solo'],
     desc: '企業区画の上層、重役フロアの壁金庫。中身は契約書の原本。',
     routes: [
@@ -280,7 +280,7 @@ const JOBS = [
     ],
   },
   {
-    id: 'r3_relay', rank: 3, title: 'ハクロウ通信の湾岸中継局を落とす', client: 'mitsukane', target: 'hakurou',
+    id: 'r3_relay', rank: 3, district: 'harbor', title: 'ハクロウ通信の湾岸中継局を落とす', client: 'mitsukane', target: 'hakurou',
     nights: 2, payout: 14000, cred: 12, heat: 20, req: ['net', 'solo', 'driver'],
     desc: '街の半分の回線が通る中継局。一晩だけ黙らせてほしい。',
     routes: [
@@ -301,7 +301,7 @@ const JOBS = [
 /* 顔役の紹介依頼（評判ランクを上げる） */
 const INTRO_JOBS = {
   1: {
-    id: 'intro1', rank: 1, title: '顔役の紹介：港のゴンドウの密輸船を守る', client: 'broker', target: null, intro: true,
+    id: 'intro1', rank: 1, district: 'harbor', title: '顔役の紹介：港のゴンドウの密輸船を守る', client: 'broker', target: null, intro: true,
     nights: 1, payout: 3200, cred: 6, heat: 0, req: ['solo', 'driver'],
     desc: '港の顔役ゴンドウが、新人の腕を見たいと言っている。成功すれば港湾の仕事が回ってくる。',
     routes: [
@@ -310,7 +310,7 @@ const INTRO_JOBS = {
     ],
   },
   2: {
-    id: 'intro2', rank: 2, title: '顔役の紹介：上層の仲介人シラサギの試験', client: 'broker', target: 'hakurou', intro: true,
+    id: 'intro2', rank: 2, district: 'upper', title: '顔役の紹介：上層の仲介人シラサギの試験', client: 'broker', target: 'hakurou', intro: true,
     nights: 2, payout: 7000, cred: 10, heat: 10, req: ['net', 'solo', 'tech'],
     desc: '上層の仲介人シラサギは、口の堅いフィクサーとしか組まない。ハクロウの役員端末を一晩のぞき見る。',
     routes: [
@@ -326,7 +326,7 @@ const INTRO_JOBS = {
 /* メイン「ブラックボックス」 */
 const CAMPAIGN_JOBS = {
   2: {
-    id: 'camp2', rank: 2, title: 'ブラックボックスをこじ開ける', client: 'self', target: null, campaign: 2,
+    id: 'camp2', rank: 2, district: 'street', title: 'ブラックボックスをこじ開ける', client: 'self', target: null, campaign: 2,
     nights: 1, payout: 0, cred: 8, heat: 0, req: ['net', 'solo'],
     desc: '前任ハシバが残した箱の暗号を破る。ダイブ中、隠れ家を嗅ぎつけた連中が来るかもしれない。',
     routes: [
@@ -334,7 +334,7 @@ const CAMPAIGN_JOBS = {
     ],
   },
   3: {
-    id: 'camp3', rank: 2, title: '前任の足跡：港湾局の乗船名簿', client: 'self', target: 'mitsukane', campaign: 3,
+    id: 'camp3', rank: 2, district: 'harbor', title: '前任の足跡：港湾局の乗船名簿', client: 'self', target: 'mitsukane', campaign: 3,
     nights: 2, payout: 3000, cred: 8, heat: 10, req: ['net', 'tech'],
     desc: '箱の運送記録と照らし合わせるため、港湾局の記録庫から名簿の原本を持ち出す。持ち出した写しは別口で売れる。',
     routes: [
@@ -346,7 +346,7 @@ const CAMPAIGN_JOBS = {
     ],
   },
   4: {
-    id: 'camp4', rank: 3, title: 'ハシバを消した者を追う', client: 'self', target: 'verde', campaign: 4,
+    id: 'camp4', rank: 3, district: 'upper', title: 'ハシバを消した者を追う', client: 'self', target: 'verde', campaign: 4,
     nights: 2, payout: 0, cred: 12, heat: 15, req: ['net', 'solo', 'driver', 'tech'],
     desc: 'ハシバが最後に会った「調整役」は、ヴェルデ製薬の上層階に住んでいる。',
     routes: [
@@ -358,7 +358,7 @@ const CAMPAIGN_JOBS = {
     ],
   },
   5: {
-    id: 'camp5', rank: 3, title: '最後の夜：箱を持って朝を迎える', client: 'self', target: 'hakurou', campaign: 5,
+    id: 'camp5', rank: 3, district: 'harbor', title: '最後の夜：箱を持って朝を迎える', client: 'self', target: 'hakurou', campaign: 5,
     nights: 2, payout: 0, cred: 15, heat: 0, req: ['net', 'solo', 'driver'],
     desc: '3社が箱を取り返しに来る。夜明けまで逃げ切れば、箱の行き先は自分で決められる。',
     routes: [

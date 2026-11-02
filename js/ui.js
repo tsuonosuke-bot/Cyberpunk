@@ -4,8 +4,6 @@ const UI = {
   tab: 'home', job: null, route: 0, team: {}, doc: null, shop: null, ask: null,
   toast: '', toastT: 0, flow: null, modalKey: '', timer: 0, play: null, est: { key: '', val: null },
 };
-const LANE = { field: '現場', support: '支援', net: 'ネット' };
-const LANE_MAX = { field: 3, support: 2, net: 1 };
 const app = document.getElementById('app');
 const modal = document.getElementById('modal');
 const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -131,7 +129,7 @@ function hud() {
   const next = G.rank < 3 ? RANK_CRED[G.rank] : null;
   return `<header class="hud"><div class="hud-in">
     <div class="brand"><span class="logo">FIXER'S CUT</span><span class="label">YOMIHAMA ・ 第${G.chapter}章</span></div>
-    ${hintButton()}<dl class="hud-stats">
+    ${Comfort.soundButton()}${hintButton()}<dl class="hud-stats">
       <div><dt class="label">夜</dt><dd class="num">${G.night}</dd></div>
       <div class="${G.money < 0 ? 'neg' : ''}"><dt class="label">所持金</dt><dd class="num">${cr(G.money)}${G.negStreak ? ` <span class="chip p">赤字 ${G.negStreak}/3</span>` : ''}</dd></div>
       <div><dt class="label">評判</dt><dd>R${G.rank} ${RANK_NAME[G.rank]} <span class="num dim">${G.cred}${next ? `/${next}` : ''}</span></dd></div>
@@ -299,7 +297,8 @@ function formation(job, team) {
       <div class="pn">${portraitImg(r, 'sm')}<b>${esc(r.name)}</b><span class="role sm">${ROLES[r.role].tag}</span><span class="num dim">HP ${r.hp}/${maxHp(r)}${hurt}</span><span class="dim">${r.contract === 'exclusive' ? '専属' : '歩合'}</span></div>
       ${seg}</div>`;
   }).join('');
-  return `<div class="slots">${lane('field')}${lane('support')}${lane('net')}</div>
+  return `<div class="actions"><button data-act="usualTeam" data-v="${job.uid}" ${G.lastTeam ? '' : 'disabled'}>いつもの面子</button></div>
+    <div class="slots">${lane('field')}${lane('support')}${lane('net')}</div>
     ${job.req.length ? `<div class="reqs"><span class="label">必須ロール</span>${req}</div>` : ''}
     <div class="picks">${rows || '<p class="dim">ランナーがいません。</p>'}</div>`;
 }
@@ -521,7 +520,7 @@ function stepComm(c) {
   const tail = c.ends
     ? `<p class="verdict ${c.success ? 'ok' : 'ng'}">${c.success ? (c.raid ? '襲撃を退けた' : '依頼成功') : (c.raid ? '防衛失敗' : '依頼失敗')}</p>`
     : '<p class="verdict dim">夜明け。続きは次の夜に届く</p>';
-  return `<div class="label">通信 ・ COMM LOG</div>
+  return `${Comfort.soundButton()}<div class="label">通信 ・ COMM LOG</div>
     <h2>${esc(c.title)}</h2>
     <p class="dim">${c.raid ? logo(c.corp) : logo(c.client)} ${head} ${esc(c.route)}</p>
     ${commStrip(c)}
@@ -664,6 +663,8 @@ function commStrip(c) {
 
 /* 通信の1行を、フェーズ表のマスに反映する */
 function markStrip(ln, final) {
+  // 通常再生で一行ずつ鳴らす。全表示時の final=true は無音
+  if (ln && !final) Comfort.tone(ln);
   const strip = modal.querySelector('.cstrip');
   if (!strip) return;
   strip.querySelectorAll('.cur').forEach((e) => e.classList.remove('cur'));
@@ -831,6 +832,18 @@ const H_ = {
     const r = getR(+b.dataset.r), id = b.dataset.v;
     act(() => buyGear(r, id) || (toast(`${r.name}に「${GEAR[id].name}」を持たせた（${GEAR[id].desc}）`), null));
   },
+  usualTeam(b) {
+    const job = G.board.find((j) => j.uid === +b.dataset.v);
+    if (!job) return;
+    toast(Comfort.restoreTeam(job)); render();
+  },
+  sound() {
+    Comfort.toggleSound();
+    // 通信の再描画を避け、表示済みの行と現在の判断を保つ
+    const holder = document.createElement('div'); holder.innerHTML = Comfort.soundButton();
+    const fresh = holder.firstElementChild;
+    document.querySelectorAll('[data-act="sound"]').forEach((x) => { x.textContent = fresh.textContent; x.setAttribute('aria-pressed', fresh.getAttribute('aria-pressed')); });
+  },
   hints() { prefs.hints = !prefs.hints; savePrefs(); applyHints(); render(); },
   treat(b) { act(() => treat(getR(+b.dataset.r))); },
   repair(b) { act(() => repair(getR(+b.dataset.r))); },
@@ -870,6 +883,9 @@ const H_ = {
     if (UI.play) { clearTimeout(UI.timer); UI.timer = setTimeout(UI.play, LOG_SPEED[prefs.speed][1]); }
   },
   next() {
+    // 再生途中なら、まず残りの行を表示する
+    const box = modal.querySelector('.log.play');
+    if (box && [...box.querySelectorAll('.ln')].some((l) => !l.classList.contains('on'))) return H_.skiplog();
     if (!UI.flow || UI.flow.out.pending) return;
     UI.flow.step++;
     if (UI.flow.step >= UI.flow.steps.length) { UI.flow = null; UI.tab = UI.tab === 'log' ? 'log' : UI.tab; }

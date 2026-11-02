@@ -60,10 +60,9 @@ const World = (() => {
     yoru: { title: 'ヨル：腕も目も自分のもの', target: 'mitsukane', district: 'harbor', req: ['solo'], intro: '義体回収班の督促状が届いた。ヨルは封を裂き、回収拠点の住所だけを机に残した。', field: [S(15, '回収班の倉庫'), C(2, '回収班', 'armored'), R('廃車の影'), O('所有権記録を焼く'), E(15, '脱出')], net: N5() },
     haruka: { title: 'ハルカ：診療所の灯', target: 'gang', district: 'street', req: ['med'], intro: '診療所を焼いた白蛇会の男が戻った。ハルカは次の患者が来る前に、今度こそ話をつけたいと言う。', field: [K(15, '白蛇会に事情を聞く'), C(3, '放火の実行犯', 'swarm'), M(15, '巻き込まれた住民の治療'), O('清算の証拠'), E(13, '診療所へ帰る')], net: N5() },
   };
-  // Explicit locations keep rank and district independent, including rank-one harbor jobs.
-  const locations = { r1_delivery: 'harbor', r1_cargo: 'harbor', r1_escort: 'harbor', r1_relay: 'street', r2_sample: 'harbor', r2_defector: 'street', r2_datatheft: 'upper', r2_convoy: 'harbor', r3_vault: 'upper', r3_relay: 'harbor', intro1: 'harbor', intro2: 'upper', camp2: 'street', camp3: 'harbor', camp4: 'upper', camp5: 'harbor' };
+  // Static jobs declare district in data.js; generated ones (deserter, personal, raid) fall back here.
   function prepareJob(j) {
-    j.district ||= locations[j.id || j.tpl] || (j.deserter ? 'street' : j.rank === 3 ? 'upper' : 'street');
+    j.district ||= j.deserter ? 'street' : j.rank === 3 ? 'upper' : 'street';
     j.tags ||= /delivery|cargo|escort|convoy/.test(j.id || j.tpl) ? ['transport'] : ['operation'];
     return j;
   }
@@ -248,23 +247,5 @@ const World = (() => {
   };
 })();
 
-// All static templates have metadata; addJob also normalizes dynamically generated jobs.
+// Static templates carry their district; tags are derived the same way as for dynamic jobs.
 for (const j of [...JOBS, ...Object.values(INTRO_JOBS), ...Object.values(CAMPAIGN_JOBS)]) World.prepareJob(j);
-let enemyRotation = 0;
-for (const j of JOBS.filter(j => j.rank === 2)) for (const r of j.routes) {
-  for (const p of r.field) if (p && p.t === 'combat') p.enemyType = ['armored', 'sniper', 'hacker', 'swarm'][enemyRotation++ % 4];
-}
-RANK_ENEMY[2].dv = 18;
-const defectorRoutes = JOBS.find(j => j.id === 'r2_defector').routes;
-defectorRoutes[0].field[1] = H(C(2, '研究棟の狙撃班', 'sniper'));
-defectorRoutes[1].field[1] = H(C(2, '社宅の狙撃班', 'sniper'));
-const rankTwoDVs = { r2_sample: [[19,19], [19,17]], r2_defector: [[19], [21]], r2_datatheft: [[20], [20]], r2_convoy: [[17,19,19], [21,17]] };
-for (const j of JOBS.filter(j => j.rank === 2)) j.routes.forEach((route, i) => {
-  let encounter=0;
-  for (const p of route.field) if (p && p.t === 'combat') p.enemyDV = rankTwoDVs[j.id][i][encounter++];
-});
-
-// Rank one: enemies that can actually hold a line, and checks a lone specialist can miss.
-// Two-person starting teams land around 70–90%; a full squad still clears almost everything.
-Object.assign(RANK_ENEMY[1], { dv: 17, atk: 16, dice: 3, plus: 2 });
-for (const j of JOBS.filter(j => j.rank === 1)) for (const r of j.routes) for (const p of [...r.field, ...r.net]) if (p && p.dv) p.dv += 2;

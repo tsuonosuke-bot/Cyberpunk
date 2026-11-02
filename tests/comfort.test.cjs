@@ -21,13 +21,8 @@ function setup({saved = {}, blocked = false} = {}) {
   const run = s => vm.runInContext(s, context);
   for (const file of ['js/data.js','js/engine.js','js/world.js']) run(fs.readFileSync(path.join(root,file),'utf8'));
   run(`
-    const UI={team:{},est:{}}; const LANE={field:'現場',support:'支援',net:'ネット'};
-    const LANE_MAX={field:3,support:2,net:1}; let reduced=false; const prefs={speed:'normal'};
+    const UI={team:{},est:{}}; let reduced=false; const prefs={speed:'normal'};
     const instantLog=()=>reduced||prefs.speed==='instant';
-    const modal={querySelector:()=>null};
-    function formation(){return 'formation';} function hud(){return '<dl class="hud-stats">';}
-    function stepComm(){return 'comm';} function markStrip(){} function toast(){} function render(){}
-    const H_={next(){},skiplog(){}};
     G={nextId:1,night:1,runners:[],scouts:[],memorial:[],missions:[],board:[],news:3};World.init(G);
   `);
   run(fs.readFileSync(path.join(root,'js/comfort.js'),'utf8'));
@@ -63,16 +58,15 @@ test('duplicate and non-net assignments are rejected by normal validation',()=>{
     errors.some(x=>x.includes('複数')) && errors.some(x=>x.includes('ネットランナー'));
   `),true);
 });
-test('four distinct synthesized cues, persisted opt in and silent bulk playback',()=>{
+test('four distinct synthesized cues, persisted opt in and silent instant playback',()=>{
   const {run,tones,storage,advance}=setup();
   assert.equal(run(`Comfort.soundButton().includes('効果音 オフ')`),true);
   run('Comfort.toggleSound()');
   for(const kind of ['ok','ng','dead','goal']) {
-    run(`markStrip({classList:{contains:k=>k==='${kind}'},textContent:''},false)`);advance();
+    run(`Comfort.tone({classList:{contains:k=>k==='${kind}'},textContent:''})`);advance();
   }
   assert.equal(new Set(tones.map(x=>x.join(','))).size,4);
-  run(`markStrip({classList:{contains:()=>true},textContent:'死亡セーブ'},true)`);
-  run(`prefs.speed='instant';markStrip({classList:{contains:()=>true},textContent:''},false)`);
+  run(`prefs.speed='instant';Comfort.tone({classList:{contains:()=>true},textContent:''})`);
   assert.equal(tones.length,4);
   assert.equal(storage.get('fixers-cut-sound'),'on');
 });
