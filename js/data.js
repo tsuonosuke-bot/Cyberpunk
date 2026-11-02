@@ -18,6 +18,9 @@ const SKILL_STAT = {
 };
 const STATS = ['BODY', 'REF', 'INT', 'TECH', 'COOL', 'EMP'];
 
+/* 性別は肖像の絵を選ぶためだけに使う。x は中性的・アンドロイド風 */
+const GENDERS = { m: '男性', f: '女性', x: 'その他' };
+
 const ROLES = {
   solo: {
     name: 'ソロ', tag: 'SOLO', armor: 11,
@@ -69,21 +72,21 @@ const NAMES = ['ミナ', 'ジロウ', 'テツ', 'サエ', 'レン', 'アキ', '�
 /* 物語つきのランナー（3人） */
 const STORY_RUNNERS = {
   kagerou: {
-    name: 'カゲロウ', role: 'net', origin: 'corp', contact: 'hakurou', pref: 'exclusive',
+    name: 'カゲロウ', gender: 'x', role: 'net', origin: 'corp', contact: 'hakurou', pref: 'exclusive',
     base: { BODY: 4, REF: 5, INT: 9, TECH: 6, COOL: 5, EMP: 6 },
     skills: { インターフェース: 7, 電子: 4, 知覚: 4, 隠密: 2, 回避: 2, 射撃: 1, 説得: 2 },
     cyber: [],
     bio: 'ハクロウ通信の元回線技師。社内で見てはいけないログを見て、三日後に退職届も出さずに消えた。前任のハシバとは面識があったらしい。',
   },
   yoru: {
-    name: 'ヨル', role: 'solo', origin: 'corp', contact: 'mitsukane', pref: 'any',
+    name: 'ヨル', gender: 'm', role: 'solo', origin: 'corp', contact: 'mitsukane', pref: 'any',
     base: { BODY: 7, REF: 8, INT: 5, TECH: 4, COOL: 7, EMP: 5 },
     skills: { 射撃: 6, 回避: 5, 隠密: 3, 知覚: 3, 運転: 2, 説得: 2 },
     cyber: ['arm', 'optics'],
     bio: 'ミツカネ重工の元警備主任。会社に義体を回収される前に逃げた。腕も目も、もう半分は自分のものではない。',
   },
   haruka: {
-    name: 'ハルカ', role: 'med', origin: 'street', contact: 'gang', pref: 'any',
+    name: 'ハルカ', gender: 'f', role: 'med', origin: 'street', contact: 'gang', pref: 'any',
     base: { BODY: 5, REF: 5, INT: 7, TECH: 8, COOL: 6, EMP: 8 },
     skills: { 医療: 7, 知覚: 4, 回避: 3, 射撃: 2, 説得: 3, 隠密: 2 },
     cyber: [],

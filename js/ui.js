@@ -561,11 +561,11 @@ function stepCutin(key) {
   if (s.k === 'comm' && out.comms[s.i].raid) return cutin({ kicker: '警報', title: '襲撃', sub: esc(out.comms[s.i].title), tone: 'red' });
   if (s.k === 'settle') {
     const dead = out.settle[s.i].deadRunners || [];
-    if (dead.length) return cutin({ kicker: '通信途絶', title: '応答なし', sub: dead.map((r) => esc(r.name)).join('、'), tone: 'red', por: portrait(dead[0], { glitch: 2 }) });
+    if (dead.length) return cutin({ kicker: '通信途絶', title: '応答なし', sub: dead.map((r) => esc(r.name)).join('、'), tone: 'red', por: portraitImg(dead[0], 'ci', { glitch: 2 }) });
   }
   if (s.k === 'report' && out.deserted && out.deserted.length) {
     const d = out.deserted[0];
-    return cutin({ kicker: '人間性 0', title: '脱走', sub: esc(d.name), tone: 'pink', por: portrait(d, { glitch: 2 }) });
+    return cutin({ kicker: '人間性 0', title: '脱走', sub: esc(d.name), tone: 'pink', por: portraitImg(d, 'ci', { glitch: 2 }) });
   }
 }
 

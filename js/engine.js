@@ -78,6 +78,11 @@ function freshName() {
   return free.length ? pick(free) : pick(NAMES) + rint(2, 9);
 }
 
+function pickGender() {
+  const x = rnd();
+  return x < 0.42 ? 'm' : x < 0.84 ? 'f' : 'x';
+}
+
 function makeRunner(role, opt = {}) {
   const R = ROLES[role];
   const origin = opt.origin || pick(Object.keys(ORIGINS));
@@ -93,7 +98,7 @@ function makeRunner(role, opt = {}) {
   }
   const contact = opt.contact || (origin === 'corp' ? pick(CORPS) : origin === 'street' ? 'gang' : 'resident');
   const r = {
-    id: G.nextId++, name: opt.name || freshName(), role, origin, contact, base, skills,
+    id: G.nextId++, name: opt.name || freshName(), gender: opt.gender || pickGender(), role, origin, contact, base, skills,
     cyber: (opt.cyber || []).slice(), armorBase: R.armor, story: opt.story || null, bio: opt.bio || '',
     contract: 'commission', stipend: 0, pref: opt.pref || pick(['any', 'any', 'any', 'commission', 'exclusive']),
     loyalty: 50, discontent: 0, wallet: rint(0, 600), lazarus: false,
@@ -121,8 +126,8 @@ function newGame() {
     repeats: {}, vouchers: { cyber: 0, intel: 0 }, pending: [], archive: [], nextId: 1,
     storyQueue: ['intro'], awaitEnding: false, ended: null, lastReport: null,
   };
-  const a = makeRunner('solo', { name: 'ジロウ', origin: 'street', pref: 'any' });
-  const b = makeRunner('driver', { name: 'サエ', origin: 'drifter', pref: 'any' });
+  const a = makeRunner('solo', { name: 'ジロウ', gender: 'm', origin: 'street', pref: 'any' });
+  const b = makeRunner('driver', { name: 'サエ', gender: 'f', origin: 'drifter', pref: 'any' });
   a.wallet = 200; b.wallet = 100;
   G.runners.push(a, b);
   refreshScouts();
@@ -133,10 +138,22 @@ function newGame() {
 function save() {
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(G)); } catch (e) { /* 保存できない環境では無視 */ }
 }
+/* 古いセーブに足りない項目を補う */
+function migrate(g) {
+  const story = { kagerou: 'x', yoru: 'm', haruka: 'f' };
+  for (const r of [...g.runners, ...g.scouts]) {
+    if (r.gender) continue;
+    let h = 0;
+    for (const ch of r.name + r.id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    r.gender = story[r.story] || ['m', 'f', 'x'][h % 3];
+  }
+  return g;
+}
+
 function loadSave() {
   try {
     const s = localStorage.getItem(SAVE_KEY);
-    if (s) { const g = JSON.parse(s); if (g && g.v === 1 && !g.ended) return g; }
+    if (s) { const g = JSON.parse(s); if (g && g.v === 1 && !g.ended) return migrate(g); }
   } catch (e) { /* 読めなければ新規 */ }
   return null;
 }

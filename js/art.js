@@ -16,178 +16,132 @@ function hashStr(s) {
   return h >>> 0;
 }
 
-/* ───────── 肖像（32×32 のドット絵、2色刷り） ───────── */
+/* ───────── 肖像（一枚絵＋義体の重ね描き） ─────────
+   絵は assets/portraits/ に置く。ロール×性別×2枚の30枚と、物語つき3人の専用の絵。
+   本番の絵に差し替えるときは、同じ名前で置いて PORTRAIT_EXT を変えるか、PORTRAIT_FILES で名前を指定する。
+   詳しくは assets/portraits/README.md を参照。 */
 
 const PAL = {
-  bg: '#0d1220', dot: '#1a2540', ink: '#06080d',
-  blue: '#3f7cff', blueD: '#1e3f8a', blueL: '#9cc0ff',
-  pink: '#ff4f9a', pinkD: '#9c2259', pinkL: '#ffb3d1',
-  paper: '#e9ebee', chrome: '#d2d9e6', chromeM: '#8b97ad', chromeD: '#4a556b',
+  pink: '#ff4f9a', pinkL: '#ffb3d1', blue: '#3f7cff', blueL: '#9cc0ff',
+  chrome: '#d2d9e6', chromeM: '#8b97ad', chromeD: '#4a556b', ink: '#06080d', paper: '#e9ebee',
 };
-const SKINS = [
-  ['#f3d9de', '#d9a2b3', '#9c5a74'],
-  ['#e8c4b4', '#c38c80', '#7c4a4e'],
-  ['#c8988a', '#9a675f', '#5b383a'],
-  ['#9b6c62', '#6f4945', '#3c2527'],
-];
-const HAIR_COLORS = [PAL.ink, PAL.blueD, PAL.pink, PAL.paper, PAL.blue];
-const HAIR_BY_ORIGIN = { corp: [0, 3, 5], street: [1, 4, 0], drifter: [2, 3, 5] };
-const portraitCache = new Map();
 
-function portrait(r, opt = {}) {
+const PORTRAIT_DIR = 'assets/portraits/';
+const PORTRAIT_VARIANTS = 2;
+const PORTRAIT_EXT = 'svg';
+const PORTRAIT_FILES = {}; // 例: { 'solo-m-1': 'solo-m-1.png', yoru: 'yoru.webp' }
+
+/* 絵の中の位置（左上0・右下100）。仮の絵はこの位置で描いてある。
+   本番の絵で位置がずれる場合は、PORTRAIT_ANCHOR_OVERRIDES に絵ごとの値を書く（tools/portraits.html で調べられる） */
+const PORTRAIT_ANCHORS = {
+  head: [50, 38, 15, 19], // 顔の楕円 [中心x, 中心y, 横半径, 縦半径]
+  eyeL: [43, 40], eyeR: [57, 40], // 画面の左の目、右の目
+  forehead: [50, 25], templeR: [63, 31], earL: [34.5, 41], cheekL: [40, 47],
+  neck: [50, 60], neckSide: [45, 57], throat: [50, 63], chest: [64, 86],
+  armL: [8, 74, 24, 26], handR: [70, 84, 20, 16], // [x, y, 幅, 高さ]
+};
+const PORTRAIT_ANCHOR_OVERRIDES = {}; // 例: { 'solo-m-1': { eyeL: [41, 38], eyeR: [58, 38] } }
+
+function portraitKey(r) {
+  if (r.story && STORY_RUNNERS[r.story]) return r.story;
+  const v = 1 + (hashStr(`${r.name}:${r.id}`) % PORTRAIT_VARIANTS);
+  return `${r.role}-${r.gender || 'x'}-${v}`;
+}
+const portraitSrc = (key) => PORTRAIT_DIR + (PORTRAIT_FILES[key] || `${key}.${PORTRAIT_EXT}`);
+
+let overlaySeq = 0;
+function implantOverlay(cyber, m, A) {
+  const id = `ov${overlaySeq++}`;
+  const has = (k) => cyber.includes(k);
+  const defs = [], out = [];
+  const glowP = 'class="gp"', glowB = 'class="gb"';
+
+  // 人間性が減るほど、左あごから顔が機械に置き換わる
+  if (m > 0.12) {
+    const [hx, hy, rx, ry] = A.head;
+    const reach = (rx + ry) * 2 * Math.min(1.5, m * 1.7) * 0.6;
+    const x0 = hx - rx - 2, y0 = hy + ry + 2;
+    defs.push(`<clipPath id="${id}c"><ellipse cx="${hx}" cy="${hy}" rx="${rx}" ry="${ry}"/></clipPath>
+      <linearGradient id="${id}g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${PAL.chrome}"/><stop offset=".5" stop-color="${PAL.chromeM}"/><stop offset="1" stop-color="${PAL.chromeD}"/></linearGradient>
+      <pattern id="${id}h" width="2.4" height="2.4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2.4" height="0.5" fill="${PAL.chromeD}"/></pattern>`);
+    const d = `M${x0} ${y0} L${x0 + reach} ${y0} L${x0} ${y0 - reach} Z`;
+    out.push(`<g clip-path="url(#${id}c)"><path d="${d}" fill="url(#${id}g)" opacity=".92"/><path d="${d}" fill="url(#${id}h)" opacity=".5"/><path d="M${x0 + reach} ${y0} L${x0} ${y0 - reach}" stroke="${PAL.ink}" stroke-width="0.9"/></g>`);
+    const [lx, ly] = A.eyeL;
+    if ((lx - x0) + (y0 - ly) < reach * 0.95) out.push(`<circle cx="${lx}" cy="${ly}" r="2.2" fill="${PAL.pink}" ${glowP}/><circle cx="${lx - 0.6}" cy="${ly - 0.5}" r="0.7" fill="${PAL.pinkL}"/>`);
+  }
+  if (has('optics')) {
+    const [x, y] = A.eyeR;
+    out.push(`<circle cx="${x}" cy="${y}" r="4.3" fill="${PAL.chromeM}" stroke="${PAL.chrome}" stroke-width="0.8"/><circle cx="${x}" cy="${y}" r="2.4" fill="${PAL.pink}" ${glowP}/><circle cx="${x - 0.7}" cy="${y - 0.7}" r="0.8" fill="${PAL.pinkL}"/>`);
+  }
+  if (has('arm')) {
+    const [x, y, w, h] = A.armL;
+    defs.push(`<linearGradient id="${id}a" x1="0" x2="1"><stop offset="0" stop-color="${PAL.chromeD}"/><stop offset=".45" stop-color="${PAL.chrome}"/><stop offset="1" stop-color="${PAL.chromeM}"/></linearGradient>`);
+    const p = (fx, fy) => `${x + w * fx} ${y + h * fy}`;
+    let seg = '';
+    for (const fy of [0.55, 0.72, 0.88]) seg += `<path d="M${p(0.14 + (1 - fy) * 0.1, fy)} L${p(0.92 - (fy - 0.5) * 0.15, fy)}" stroke="${PAL.chromeD}" stroke-width="0.9"/>`;
+    out.push(`<path d="M${p(0.55, 0.08)} C${p(0.92, 0.04)} ${p(1.06, 0.36)} ${p(0.95, 0.56)} L${p(0.8, 1)} L${p(0.04, 1)} L${p(0.18, 0.4)} C${p(0.24, 0.18)} ${p(0.4, 0.1)} ${p(0.55, 0.08)} Z" fill="url(#${id}a)" stroke="${PAL.chromeD}" stroke-width="0.6"/>`
+      + `<ellipse cx="${x + w * 0.62}" cy="${y + h * 0.26}" rx="${w * 0.3}" ry="${h * 0.17}" fill="${PAL.chromeM}" stroke="${PAL.chrome}" stroke-width="0.6"/>${seg}`
+      + `<circle cx="${x + w * 0.62}" cy="${y + h * 0.26}" r="1" fill="${PAL.blue}" ${glowB}/><circle cx="${x + w * 0.45}" cy="${y + h * 0.8}" r="0.9" fill="${PAL.blue}" ${glowB}/>`);
+  }
+  if (has('plating')) {
+    const [x, y] = A.cheekL;
+    out.push(`<path d="M${x} ${y - 7} V${y + 6} M${x - 1.5} ${y - 3} H${x + 1.5} M${x - 1.5} ${y + 2} H${x + 1.5}" stroke="${PAL.chromeD}" stroke-width="0.8" fill="none"/><circle cx="${x + 2}" cy="${y - 5}" r="0.7" fill="${PAL.chrome}"/><circle cx="${x + 2}" cy="${y + 4}" r="0.7" fill="${PAL.chrome}"/>`);
+  }
+  if (has('synapse')) {
+    const [x, y] = A.templeR;
+    out.push(`<g fill="${PAL.blueL}" ${glowB}><circle cx="${x}" cy="${y}" r="0.9"/><circle cx="${x + 1.6}" cy="${y + 2.4}" r="0.9"/><circle cx="${x}" cy="${y + 4.8}" r="0.9"/></g><path d="M${x} ${y} L${x + 1.6} ${y + 2.4} L${x} ${y + 4.8}" stroke="${PAL.blueL}" stroke-width="0.4" fill="none"/>`);
+  }
+  if (has('coproc')) {
+    const [x, y] = A.forehead;
+    out.push(`<rect x="${x - 3}" y="${y - 1.5}" width="6" height="3" rx="0.6" fill="${PAL.chromeD}" stroke="${PAL.chrome}" stroke-width="0.4"/><circle cx="${x + 1.5}" cy="${y}" r="0.7" fill="${PAL.blueL}" ${glowB}/>`);
+  }
+  if (has('jack')) {
+    const [x, y] = A.neck;
+    const [cx, cy] = A.chest;
+    out.push(`<rect x="${x + 4}" y="${y - 2}" width="2.6" height="4" rx="0.6" fill="${PAL.chrome}"/><path d="M${x + 5.3} ${y + 2} C${x + 8} ${y + 10} ${cx - 6} ${cy - 12} ${cx - 2} ${cy - 2}" stroke="${PAL.blue}" stroke-width="1.1" fill="none" ${glowB}/>`);
+  }
+  if (has('toolfinger')) {
+    const [x, y, w, h] = A.handR;
+    const fw = w / 5;
+    let fingers = '';
+    for (let i = 0; i < 4; i++) fingers += `<rect x="${x + 1 + i * (fw + 0.8)}" y="${y - 5}" width="${fw * 0.8}" height="7" rx="0.8" fill="${PAL.chrome}"/><circle cx="${x + 1 + i * (fw + 0.8) + fw * 0.4}" cy="${y - 5}" r="0.7" fill="${PAL.blueL}" ${glowB}/>`;
+    out.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="${PAL.chromeM}"/>${fingers}`);
+  }
+  if (has('ears')) {
+    const [x, y] = A.earL;
+    out.push(`<ellipse cx="${x}" cy="${y}" rx="3" ry="4.4" fill="${PAL.chromeM}" stroke="${PAL.chrome}" stroke-width="0.5"/><circle cx="${x}" cy="${y}" r="0.9" fill="${PAL.blueL}" ${glowB}/>`);
+  }
+  if (has('medkit')) {
+    const [x, y] = A.chest;
+    out.push(`<circle cx="${x}" cy="${y}" r="3.4" fill="${PAL.ink}" stroke="${PAL.chromeD}" stroke-width="0.9"/><path d="M${x - 1.8} ${y} H${x + 1.8} M${x} ${y - 1.8} V${y + 1.8}" stroke="${PAL.pink}" stroke-width="1.1" ${glowP}/>`);
+  }
+  if (has('steering')) {
+    const [x, y] = A.neckSide;
+    out.push(`<path d="M${x} ${y - 4} V${y + 10}" stroke="${PAL.blueL}" stroke-width="0.9" stroke-dasharray="1.4 1.2" ${glowB}/>`);
+  }
+  if (has('painblock')) {
+    const [x, y] = A.neckSide;
+    let bars = '';
+    for (let i = 0; i < 6; i++) bars += `<rect x="${x - 6 + i * 1.1}" y="${y - 1}" width="${i % 3 ? 0.5 : 0.8}" height="3" fill="${PAL.ink}"/>`;
+    out.push(`<rect x="${x - 6.5}" y="${y - 1.5}" width="7.3" height="4" fill="${PAL.paper}" opacity=".85"/>${bars}`);
+  }
+  if (has('voice')) {
+    const [x, y] = A.throat;
+    out.push(`<rect x="${x - 3}" y="${y - 1.6}" width="6" height="3.6" rx="0.8" fill="${PAL.chromeD}"/><path d="M${x - 2} ${y - 0.6} H${x + 2} M${x - 2} ${y + 0.4} H${x + 2} M${x - 2} ${y + 1.4} H${x + 2}" stroke="${PAL.chrome}" stroke-width="0.35"/>`);
+  }
+  return `<defs>${defs.join('')}</defs>${out.join('')}`;
+}
+
+/* 肖像のHTML。opt.cyber / opt.humanity で「入れた後」を描ける。opt.glitch で強いグリッチ（0, 1, 2） */
+function portraitImg(r, cls = '', opt = {}) {
   const cyber = opt.cyber || r.cyber || [];
   const hm = (r.base ? r.base.EMP : 5) * 10;
   const hum = opt.humanity !== undefined ? opt.humanity : r.humanity;
   const m = Math.max(0, Math.min(1, 1 - hum / hm));
   const glitch = opt.glitch !== undefined ? opt.glitch : hum <= 0 ? 2 : hum <= 15 ? 1 : 0;
-  const key = `${r.id}|${r.name}|${r.role}|${r.origin}|${cyber.join(',')}|${Math.round(m * 12)}|${glitch}`;
-  if (portraitCache.has(key)) return portraitCache.get(key);
-
-  const S = 32;
-  const cv = document.createElement('canvas');
-  cv.width = cv.height = S;
-  const c = cv.getContext('2d');
-  const rnd = mulberry32(hashStr(`${r.name}:${r.id}`));
-  const px = (x, y, col) => { if (x < 0 || y < 0 || x >= S || y >= S) return; c.fillStyle = col; c.fillRect(x, y, 1, 1); };
-  const rect = (x, y, w, h, col) => { c.fillStyle = col; c.fillRect(x, y, w, h); };
-  const glow = (x, y, col) => { c.globalAlpha = 0.45; px(x, y, col); c.globalAlpha = 1; };
-
-  // 背景：右下に網点
-  rect(0, 0, S, S, PAL.bg);
-  for (let y = 0; y < S; y += 3) for (let x = (y / 3) % 2 ? 1 : 0; x < S; x += 3) if (x + y > 24) px(x, y, PAL.dot);
-
-  const skin = SKINS[Math.floor(rnd() * SKINS.length)];
-  const hairCol = HAIR_COLORS[Math.floor(rnd() * HAIR_COLORS.length)];
-  const styles = HAIR_BY_ORIGIN[r.origin] || [0];
-  const hairStyle = styles[Math.floor(rnd() * styles.length)];
-  const rx = 6 + Math.floor(rnd() * 2);
-  const cy = 13, ry = 8.5;
-  const hw = (y) => {
-    const t = (y - cy) / ry;
-    if (Math.abs(t) > 1) return -1;
-    let w = Math.round(rx * Math.sqrt(1 - t * t));
-    if (y > 16) w -= Math.round((y - 16) * 0.5);
-    return Math.max(w, 1);
-  };
-  const L = (y) => 16 - hw(y);
-  const Rr = (y) => 15 + hw(y);
-  const inFace = (x, y) => hw(y) > 0 && x >= L(y) && x <= Rr(y);
-
-  // 胴と首
-  const clothes = { solo: PAL.ink, net: PAL.blueD, tech: PAL.chromeD, med: PAL.paper, driver: PAL.ink }[r.role] || PAL.ink;
-  rect(8, 24, 16, 2, clothes);
-  rect(4, 26, 24, 6, clothes);
-  rect(13, 19, 6, 6, skin[1]);
-  rect(13, 19, 6, 1, skin[2]);
-
-  // 顔
-  for (let y = 4; y <= 22; y++) {
-    if (hw(y) <= 0) continue;
-    for (let x = L(y); x <= Rr(y); x++) px(x, y, x >= Rr(y) - 1 ? skin[1] : skin[0]);
-  }
-  for (let y = 12; y <= 15; y++) { px(L(y) - 1, y, skin[1]); px(Rr(y) + 1, y, skin[1]); }
-
-  // 人間性が減るほど、左あごから機械が広がる
-  const T = m * 17;
-  const machineAt = (x, y) => m > 0.12 && inFace(x, y) && (x - L(y)) + (22 - y) * 0.7 < T;
-  for (let y = 4; y <= 22; y++) {
-    if (hw(y) <= 0) continue;
-    for (let x = L(y); x <= Rr(y); x++) {
-      if (!machineAt(x, y)) continue;
-      const edge = !machineAt(x + 1, y) || !machineAt(x, y - 1);
-      px(x, y, edge ? PAL.ink : (x + y) % 3 === 0 ? PAL.chromeD : PAL.chromeM);
-    }
-  }
-
-  // 目・眉・鼻・口
-  const eye = (x) => {
-    if (machineAt(x, 13)) { rect(x, 13, 2, 2, PAL.pink); px(x, 13, PAL.pinkL); glow(x - 1, 13, PAL.pink); return; }
-    px(x, 13, PAL.paper); px(x + 1, 13, PAL.ink); rect(x, 14, 2, 1, PAL.ink);
-  };
-  eye(12); eye(18);
-  rect(11, 11, 3, 1, hairCol === PAL.paper ? skin[2] : hairCol);
-  rect(18, 11, 3, 1, hairCol === PAL.paper ? skin[2] : hairCol);
-  px(16, 15, skin[1]); px(16, 16, skin[2]);
-  rect(14, 18, 4, 1, PAL.pinkD); px(13, 18, skin[1]); px(18, 18, skin[1]);
-
-  // 髪
-  const top = (rows) => { for (let y = 3; y < 3 + rows; y++) { const w = hw(y) > 0 ? hw(y) + 1 : 4; rect(16 - w, y, w * 2, 1, hairCol); } };
-  if (hairStyle === 0) { top(5); for (let y = 8; y <= 10; y++) { px(L(y), y, hairCol); px(Rr(y), y, hairCol); } }
-  if (hairStyle === 1) { for (let y = 0; y <= 8; y++) rect(14, y, 4, 1, hairCol); for (let y = 6; y <= 10; y += 2) { px(L(y) + 1, y, skin[1]); px(Rr(y) - 1, y, skin[1]); } }
-  if (hairStyle === 2) { top(5); for (let y = 7; y <= 23; y++) { const l = (hw(y) > 0 ? L(y) : 10) - 2; const rr = (hw(y) > 0 ? Rr(y) : 21) + 1; rect(l, y, 2, 1, hairCol); rect(rr, y, 2, 1, hairCol); } }
-  if (hairStyle === 3) { top(6); rect(L(9), 9, Rr(9) - L(9) + 1, 1, hairCol); for (let y = 9; y <= 17; y++) { px(L(y) - 1, y, hairCol); px(Rr(y) + 1, y, hairCol); } }
-  if (hairStyle === 4) { for (let y = 4; y <= 7; y++) for (let x = L(y); x <= Rr(y); x += 2) px(x, y, skin[1]); rect(10, 6, 3, 1, PAL.blue); }
-  if (hairStyle === 5) { top(5); for (let y = 8; y <= 11; y++) rect(L(y), y, 6 - (y - 8), 1, hairCol); }
-
-  // ロール
-  if (r.role === 'net') {
-    for (let y = 2; y <= 24; y++) {
-      const l = hw(y) > 0 ? L(y) - 1 : 9, rr = hw(y) > 0 ? Rr(y) + 1 : 22;
-      if (y <= 4) rect(9, y, 14, 1, PAL.blueD);
-      else { rect(l - 2, y, 2, 1, PAL.blueD); rect(rr + 1, y, 2, 1, PAL.blueD); px(l - 2, y, PAL.blue); px(rr + 2, y, PAL.blue); }
-    }
-  }
-  if (r.role === 'tech') { rect(L(8), 8, Rr(8) - L(8) + 1, 2, PAL.chromeD); rect(11, 8, 3, 2, PAL.blue); rect(18, 8, 3, 2, PAL.blue); px(12, 8, PAL.blueL); px(19, 8, PAL.blueL); }
-  if (r.role === 'driver') { rect(11, 13, 4, 2, PAL.pink); rect(17, 13, 4, 2, PAL.pink); rect(15, 13, 2, 1, PAL.ink); px(11, 13, PAL.pinkL); px(17, 13, PAL.pinkL); rect(4, 27, 24, 1, PAL.blue); }
-  if (r.role === 'med') { rect(12, 21, 8, 2, PAL.paper); rect(20, 27, 3, 1, PAL.pink); rect(21, 26, 1, 3, PAL.pink); }
-  if (r.role === 'solo') { rect(9, 22, 3, 4, PAL.ink); rect(20, 22, 3, 4, PAL.ink); px(11, 23, PAL.pink); px(20, 23, PAL.pink); }
-
-  // 出自
-  if (r.origin === 'corp') { rect(15, 25, 2, 7, PAL.pink); px(14, 24, PAL.paper); px(17, 24, PAL.paper); }
-  if (r.origin === 'street') { px(L(16) - 1, 16, PAL.pinkL); px(20, 15, PAL.pinkD); px(21, 16, PAL.pinkD); px(20, 17, PAL.pinkD); }
-  if (r.origin === 'drifter') { rect(11, 22, 10, 3, PAL.blue); for (let x = 11; x < 21; x += 2) px(x, 23, PAL.blueL); }
-
-  // 義体
-  const has = (k) => cyber.includes(k);
-  if (has('optics')) {
-    rect(17, 12, 4, 4, PAL.chromeM); rect(18, 13, 2, 2, PAL.pink); px(18, 13, PAL.pinkL);
-    glow(21, 13, PAL.pink); glow(21, 14, PAL.pink); glow(22, 13, PAL.pinkL);
-  }
-  if (has('arm')) {
-    rect(3, 25, 8, 7, PAL.chromeM);
-    for (let y = 26; y < 32; y += 3) rect(3, y, 8, 1, PAL.chromeD);
-    rect(3, 25, 8, 1, PAL.chrome); px(5, 28, PAL.blue); px(8, 31, PAL.blue);
-  }
-  if (has('plating')) { const x = L(15) + 2; for (let y = 12; y <= 19; y++) px(x, y, PAL.chromeD); px(x + 1, 13, PAL.chrome); px(x + 1, 17, PAL.chrome); }
-  if (has('synapse')) { const x = Rr(10) - 1; px(x, 9, PAL.blueL); px(x + 1, 10, PAL.blueL); px(x, 11, PAL.blueL); glow(x + 2, 10, PAL.blue); }
-  if (has('coproc')) { rect(15, 6, 2, 2, PAL.chromeD); px(16, 6, PAL.blue); glow(16, 5, PAL.blueL); }
-  if (has('jack')) { rect(18, 21, 1, 2, PAL.chrome); px(19, 23, PAL.blue); px(20, 24, PAL.blue); px(21, 25, PAL.blue); px(21, 26, PAL.blueL); }
-  if (has('toolfinger')) { rect(23, 27, 6, 5, PAL.chromeM); for (const x of [23, 25, 27]) { px(x, 26, PAL.chrome); px(x, 25, PAL.blue); } }
-  if (has('ears')) { const x = L(13) - 1; rect(x, 12, 1, 4, PAL.chromeM); px(x, 13, PAL.blue); glow(x - 1, 13, PAL.blueL); }
-  if (has('medkit')) { px(21, 29, PAL.pink); px(20, 29, PAL.chromeD); px(22, 29, PAL.chromeD); glow(21, 30, PAL.pinkL); }
-  if (has('steering')) { for (let y = 20; y <= 24; y += 2) px(13, y, PAL.blueL); }
-  if (has('painblock')) { for (let x = 12; x <= 15; x++) px(x, 22, x % 2 ? PAL.ink : PAL.paper); }
-  if (has('voice')) { rect(15, 22, 2, 2, PAL.chromeD); px(15, 22, PAL.chrome); px(16, 23, PAL.chrome); }
-
-  // 人間性15以下・0のグリッチ
-  if (glitch) {
-    const img = c.getImageData(0, 0, S, S);
-    const d = img.data;
-    const g = mulberry32(hashStr(key));
-    const rows = glitch === 2 ? 10 : 3;
-    for (let k = 0; k < rows; k++) {
-      const y = Math.floor(g() * S);
-      const sh = (g() < 0.5 ? -1 : 1) * (1 + Math.floor(g() * (glitch === 2 ? 5 : 2)));
-      const row = d.slice(y * S * 4, (y + 1) * S * 4);
-      for (let x = 0; x < S; x++) {
-        const sx = Math.min(S - 1, Math.max(0, x - sh));
-        for (let ch = 0; ch < 4; ch++) d[(y * S + x) * 4 + ch] = row[sx * 4 + ch];
-      }
-    }
-    for (let y = 1; y < S; y += 2) for (let x = 0; x < S; x++) { const i = (y * S + x) * 4; d[i] *= 0.8; d[i + 1] *= 0.8; d[i + 2] *= 0.85; }
-    c.putImageData(img, 0, 0);
-    if (glitch === 2) for (let k = 0; k < 5; k++) rect(0, Math.floor(g() * S), S, 1, g() < 0.5 ? PAL.pink : PAL.blue);
-  }
-
-  const url = cv.toDataURL();
-  portraitCache.set(key, url);
-  return url;
-}
-
-function portraitImg(r, cls = '', opt = {}) {
-  const hum = opt.humanity !== undefined ? opt.humanity : r.humanity;
-  const jitter = hum <= 15 && opt.glitch !== 0 ? ' glitchy' : '';
-  return `<img class="por ${cls}${jitter}" src="${portrait(r, opt)}" alt="" width="32" height="32">`;
+  const key = opt.key || portraitKey(r);
+  const A = { ...PORTRAIT_ANCHORS, ...(PORTRAIT_ANCHOR_OVERRIDES[key] || {}) };
+  return `<span class="pf ${cls}${glitch === 1 ? ' glitchy' : ''}${glitch === 2 ? ' broken' : ''}" style="--m:${m.toFixed(2)}"><img src="${portraitSrc(key)}" alt="" decoding="async"><svg class="ov" viewBox="0 0 100 100" aria-hidden="true">${implantOverlay(cyber, m, A)}</svg></span>`;
 }
 
 /* ───────── 企業・勢力のロゴ（currentColor の SVG） ───────── */
@@ -379,7 +333,7 @@ function cutin({ kicker = '', title = '', sub = '', tone = 'pink', por = '' }) {
   if (!fx || ART_REDUCED) return;
   clearTimeout(cutinTimer);
   fx.innerHTML = `<div class="cutin tone-${tone}">
-    <div class="ci-band">${por ? `<img class="ci-por" src="${por}" alt="">` : ''}<div class="ci-text"><span class="ci-kick">${kicker}</span><b data-t="${title}">${title}</b>${sub ? `<small>${sub}</small>` : ''}</div></div>
+    <div class="ci-band">${por || ''}<div class="ci-text"><span class="ci-kick">${kicker}</span><b data-t="${title}">${title}</b>${sub ? `<small>${sub}</small>` : ''}</div></div>
   </div>`;
   fx.hidden = false;
   cutinTimer = setTimeout(() => { fx.hidden = true; fx.innerHTML = ''; }, 2300);
