@@ -359,7 +359,7 @@ function jobDetail(job) {
   const cost = intelCost(job);
   return `<article class="jd" id="jd">
     <div class="label jdlabel">${logo(job.client)}${CLIENTS[job.client].name}${job.target ? ` → 標的 ${logo(job.target)}${CLIENTS[job.target].name}` : ''}</div>
-    <h2>${esc(job.title)}</h2>${World.jobBadge(job)}
+    <h2>${esc(job.title)}</h2>${World.jobBadge(job, UI.route)}
     <p>${esc(job.desc)}</p>
     <dl class="facts">
       <div><dt>評判ランク</dt><dd>R${job.rank}</dd></div>

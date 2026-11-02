@@ -264,17 +264,37 @@ const World = (() => {
         <button data-act="upgrade" data-v="${k}" ${!next || G.money < next.cost ? 'disabled' : ''}>${!next ? '最大' : cur ? `Lv${cur + 1}に上げる` : '導入する'}</button></article>`;
     }).join('')}</div></section>`;
   }
-  function jobBadge(j) {
+  // フェーズで振る技能。まだ見えていない「???」のフェーズは数えない
+  const PHASE_SKILLS = { sneak: ['隠密'], trap: ['知覚'], combat: ['射撃', '回避'], boss: ['射撃', '回避'], gate: ['電子'], escape: ['運転'], drive: ['運転'], talk: ['説得'], med: ['医療'], ice: ['インターフェース'] };
+  const ENEMY_SKILLS = { sniper: ['知覚'], hacker: ['インターフェース'] };
+  function routeSkills(j, ri) {
+    const set = new Set(), r = j.routes[ri];
+    for (const p of [...r.field, ...r.net]) {
+      if (!p || (p.hidden && !j.intel)) continue;
+      for (const k of [...(PHASE_SKILLS[p.t] || []), ...(ENEMY_SKILLS[p.enemyType] || [])]) set.add(k);
+    }
+    return set;
+  }
+  // 今夜のニュースがこの依頼に効く効果の一覧。routeIdx を渡すとそのルートだけ、省くとどれかのルートで振る判定を見る
+  function newsEffects(j, routeIdx) {
+    const n = currentNews(), fx = [];
+    if (!applies(n, j)) return fx;
+    if (n.payout && n.tag && j.tags.includes(n.tag)) fx.push({ text: `報酬+${Math.round((n.payout - 1) * 100)}%`, good: true });
+    const routes = routeIdx === undefined ? j.routes.map((_, i) => i) : [routeIdx];
+    if (n.skill && routes.some(i => routeSkills(j, i).has(n.skill))) fx.push({ text: `${n.skill}${n.bonus >= 0 ? '+' : '−'}${Math.abs(n.bonus)}`, good: n.bonus >= 0 });
+    return fx;
+  }
+  function jobBadge(j, routeIdx) {
     prepareJob(j);
-    const n = currentNews(), affected = applies(n,j) && (n.skill || (n.tag && j.tags.includes(n.tag)));
-    return `<span class="chip b">${districts[j.district]}</span>${G.conditions[j.district] ? `<span class="chip o">${esc(G.conditions[j.district].text)}</span>` : ''}${affected ? '<span class="chip p">ニュース影響</span>' : ''}${j.personal ? `<span class="chip p">個人依頼・夜${j.expires}まで／本人必須</span>` : ''}`;
+    const news = newsEffects(j, routeIdx).map(fx => `<span class="chip ${fx.good ? 'b' : 'p'}" title="${esc(currentNews().text)}">ニュース：${fx.text}</span>`).join('');
+    return `<span class="chip b">${districts[j.district]}</span>${G.conditions[j.district] ? `<span class="chip o">${esc(G.conditions[j.district].text)}</span>` : ''}${news}${j.personal ? `<span class="chip p">個人依頼・夜${j.expires}まで／本人必須</span>` : ''}`;
   }
   function storyHtml(key) {
     const p = personal[key];
     if (!p) return '';
     return `<div class="label">PERSONAL</div><h2>${esc(p.title)}</h2><p class="story">${esc(p.intro)}</p><p>5夜以内に本人を編成して依頼を受けてください。期限切れで本人は隠れ家を去ります。</p><button class="primary" data-act="personalnotice">依頼盤で確認する</button>`;
   }
-  return { districts, enemies, upgrades, perks, rivals, news, init, prepareJob, context, checkParts, checkBonus, payoutMultiplier, refreshBoard, settle, beforeNight, afterNight, nextNight, poached, buyUpgrade, recoveryBonus, homeHtml, upgradesHtml, jobBadge, storyHtml, level: lv,
+  return { districts, enemies, upgrades, perks, rivals, news, init, prepareJob, context, checkParts, checkBonus, payoutMultiplier, refreshBoard, settle, beforeNight, afterNight, nextNight, poached, buyUpgrade, recoveryBonus, homeHtml, upgradesHtml, jobBadge, newsEffects, storyHtml, level: lv,
     upkeep: () => Object.entries(upgrades).filter(([k]) => lv(k) && upgrades[k].levels[lv(k) - 1].upkeep).map(([k,u]) => [`${u.name}の維持費`, u.levels[lv(k) - 1].upkeep]),
     securityReduction: () => lv('security') >= 2 ? 1 : 0,
     therapyNights: () => lv('bunks') ? 2 : 3,

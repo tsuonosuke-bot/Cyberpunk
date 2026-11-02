@@ -95,3 +95,23 @@ test('news transport payout is previewed and locked at dispatch',()=>{
   run('dispatch(j.uid,0,t); G.news=3;');
   assert.equal(run('G.missions[0].job.payout'),2400);
 });
+test('news chip names the effect and appears only when a visible phase rolls that skill',()=>{
+  const run=game();
+  run(`const idx=t=>World.news.findIndex(n=>n.text.includes(t));
+    const ice=addJob({id:'n1',title:'ICEあり',client:'resident',target:null,rank:1,district:'street',tags:['operation'],req:[],payout:1000,cred:1,heat:0,nights:1,routes:[{name:'a',field:[S(15,'x'),_,_,_,O('y')],net:[I(15,'z','data'),_,_,_,_]},{name:'b',field:[S(15,'x'),_,_,_,O('y')],net:N5()}]},false);
+    const plain=addJob({id:'n2',title:'ICEなし',client:'resident',target:null,rank:1,district:'street',tags:['operation'],req:[],payout:1000,cred:1,heat:0,nights:1,routes:[{name:'a',field:[S(15,'x'),_,_,_,O('y')],net:N5()}]},false);
+    G.news=idx('大規模障害');`);
+  assert.equal(run('World.newsEffects(plain).length'),0);
+  assert.equal(run('World.newsEffects(ice).map(f=>f.text).join()'),'インターフェース+1');
+  assert.equal(run('World.newsEffects(ice,1).length'),0); // the selected route has no ICE
+  run('var esc=s=>String(s);'); // jobBadge escapes with ui.js's helper
+  assert.match(run('World.jobBadge(ice)'),/ニュース：インターフェース\+1/);
+  run(`G.news=idx('湾岸道路で事故'); const cargo=addJob(JOBS.find(j=>j.id==='r1_cargo'),false); ice.tags=['operation'];`);
+  assert.equal(run('World.newsEffects(cargo,1).map(f=>f.text).join()'),'報酬+20%,運転−2'); // the canal route drives
+  run(`const delivery=addJob(JOBS.find(j=>j.id==='r1_delivery'),false);`);
+  assert.equal(run('World.newsEffects(delivery,1).map(f=>f.text).join()'),'報酬+20%'); // back alleys: no driving
+  assert.equal(run('World.newsEffects(plain).length'),0); // no driving phase
+  run(`G.news=idx('港湾労組'); const hidden=addJob({id:'n3',title:'隠し',client:'resident',target:null,rank:1,district:'harbor',tags:['operation'],req:[],payout:1000,cred:1,heat:0,nights:1,routes:[{name:'a',field:[H(S(15,'x')),_,_,_,O('y')],net:N5()}]},false);`);
+  assert.equal(run('World.newsEffects(hidden).length'),0); // unrevealed phases do not leak through the chip
+  assert.equal(run('hidden.intel=true; World.newsEffects(hidden)[0].good'),false);
+});
